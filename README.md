@@ -137,7 +137,26 @@ This works the same across every channel (website, Facebook, Instagram, WhatsApp
 - Per-channel tweaks (e.g. shorter replies on SMS-like channels) live in `channelNotes` inside `src/core/chatbot.ts`.
 - To hand off to a human, have the model include a marker phrase in its reply and check for it in each channel's router before sending — the hook points are already there (`generateReply` return value in each router).
 
-## Deploying
+## Deploying to Render
+
+This repo includes a `render.yaml` blueprint, so Render can set most of it up automatically.
+
+1. Push this repo to GitHub if it isn't already there.
+2. Go to https://dashboard.render.com → **New** → **Blueprint**, and point it at this repo. Render reads `render.yaml` and creates a **Web Service** for you (build: `npm install && npm run build`, start: `npm start`).
+3. During setup, Render will prompt you to fill in the env vars marked `sync: false` in `render.yaml` (secrets it can't guess) — at minimum:
+   - `AI_PROVIDER` (`anthropic` or `openai`) and the matching API key
+   - `BOT_PERSONA`
+   - Whichever channel's credentials you're connecting first (Meta/WhatsApp/Gmail — see the sections above). You can leave the others blank until you're ready for that channel; missing values just mean that channel's webhook calls will fail until set.
+4. Deploy. Render gives you a public URL like `https://aichatagents.onrender.com` — that's your "server URL" for every webhook config in the sections above (Facebook, Instagram, WhatsApp callback URLs; Gmail's `GMAIL_REDIRECT_URI`).
+5. After deploying, update `GMAIL_REDIRECT_URI` to `https://aichatagents.onrender.com/gmail/oauth2callback` (both in Render's env vars *and* in the Google Cloud Console OAuth client's authorized redirect URIs), then visit `https://aichatagents.onrender.com/gmail/auth` to connect Gmail.
+6. Whenever you push new commits to the connected branch, Render redeploys automatically.
+
+**Free tier notes:**
+- Render's free web services spin down after inactivity and take ~30-60s to wake on the next request — fine for testing, consider a paid plan before relying on it for real customer traffic.
+- The Gmail poller (`npm run gmail:poll`) needs to run continuously, which a free web service won't do reliably on its own. Add it as a second service in Render (**Background Worker**, same repo, start command `npm run gmail:poll`), or run it elsewhere.
+- `gmail-token.json` is written to local disk after you authorize — Render's free tier disk isn't persistent across deploys, so you'll need to re-run `/gmail/auth` after each redeploy unless you're on a paid plan with a persistent disk, or you switch the poller to store the token somewhere durable (e.g. an env var or a database) instead.
+
+## Deploying elsewhere
 
 ```bash
 npm run build
