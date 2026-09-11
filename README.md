@@ -34,7 +34,9 @@ cp .env.example .env
 ```
 
 Fill in `.env`:
-- `ANTHROPIC_API_KEY` — from https://console.anthropic.com
+- `AI_PROVIDER` — `anthropic` (Claude) or `openai` (GPT). Only fill in the key for the one you pick.
+  - `ANTHROPIC_API_KEY` — from https://console.anthropic.com
+  - `OPENAI_API_KEY` — from https://platform.openai.com/api-keys
 - `BOT_NAME` / `BOT_PERSONA` — your bot's identity and instructions
 
 Then for local development:

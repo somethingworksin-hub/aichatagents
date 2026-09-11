@@ -1,8 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config";
 import { conversationStore } from "./conversationStore";
-
-const anthropic = new Anthropic({ apiKey: config.anthropic.apiKey });
+import { callLLM } from "./llmProvider";
 
 export type Channel = "website" | "facebook" | "instagram" | "whatsapp" | "gmail";
 
@@ -31,25 +29,15 @@ export interface ReplyOptions {
 }
 
 /**
- * Generates a reply using Claude, with per-user conversation memory scoped to the channel.
+ * Generates a reply using the configured LLM provider (Claude or OpenAI, via
+ * AI_PROVIDER), with per-user conversation memory scoped to the channel.
  */
 export async function generateReply({ channel, userId, message, extraSystemContext }: ReplyOptions): Promise<string> {
   const history = conversationStore.getHistory(channel, userId);
 
   const system = extraSystemContext ? `${systemPrompt(channel)}\n\n${extraSystemContext}` : systemPrompt(channel);
 
-  const response = await anthropic.messages.create({
-    model: config.anthropic.model,
-    max_tokens: 1024,
-    system,
-    messages: [
-      ...history.map((m) => ({ role: m.role, content: m.content })),
-      { role: "user" as const, content: message },
-    ],
-  });
-
-  const textBlock = response.content.find((b) => b.type === "text");
-  const reply = textBlock && "text" in textBlock ? textBlock.text.trim() : "Sorry, I couldn't come up with a reply just now.";
+  const reply = await callLLM(system, history, message);
 
   conversationStore.append(channel, userId, { role: "user", content: message, at: Date.now() });
   conversationStore.append(channel, userId, { role: "assistant", content: reply, at: Date.now() });

@@ -9,9 +9,19 @@ function required(name: string, fallback = ""): string {
 export const config = {
   port: Number(process.env.PORT || 3000),
 
+  ai: {
+    // "anthropic" (Claude) or "openai" (GPT). Pick whichever key you have.
+    provider: required("AI_PROVIDER", "anthropic").toLowerCase() as "anthropic" | "openai",
+  },
+
   anthropic: {
     apiKey: required("ANTHROPIC_API_KEY"),
     model: required("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929"),
+  },
+
+  openai: {
+    apiKey: required("OPENAI_API_KEY"),
+    model: required("OPENAI_MODEL", "gpt-4o-mini"),
   },
 
   bot: {
