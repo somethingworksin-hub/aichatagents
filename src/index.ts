@@ -7,6 +7,8 @@ import { facebookRouter } from "./channels/facebook/router";
 import { instagramRouter } from "./channels/instagram/router";
 import { whatsappRouter } from "./channels/whatsapp/router";
 import { gmailRouter } from "./channels/gmail/router";
+import { knowledgeRouter } from "./channels/knowledge/router";
+import { reloadKnowledgeBase } from "./core/knowledgeBase";
 
 const app = express();
 
@@ -36,6 +38,9 @@ app.use(facebookRouter);
 app.use(instagramRouter);
 app.use(whatsappRouter);
 app.use(gmailRouter);
+app.use(knowledgeRouter);
+
+reloadKnowledgeBase();
 
 app.listen(config.port, () => {
   console.log(`AI chat agents server listening on port ${config.port}`);

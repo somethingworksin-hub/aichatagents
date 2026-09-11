@@ -111,6 +111,26 @@ The Gmail channel auto-replies to unread mail in an inbox you authorize. It uses
 
 For production, prefer [Gmail push notifications via Cloud Pub/Sub](https://developers.google.com/gmail/api/guides/push) over polling — it's near-instant and cheaper on quota. The polling approach here is the simplest way to get started without provisioning Pub/Sub.
 
+## Feeding it a knowledge base ("training" it on your data)
+
+The bot doesn't get fine-tuned — instead it does retrieval: every incoming
+message is matched against your own documents, and the most relevant
+snippets are handed to the model as context before it replies. This is the
+standard, practical way to ground a support bot in your content.
+
+1. Drop `.txt` or `.md` files into the `knowledge/` folder (subfolders are fine). One file per topic, or one big file — either works. Within a file, separate distinct facts/topics with a blank line; the bot retrieves paragraph by paragraph, so one idea per paragraph gives better results than one giant wall of text.
+2. Restart the server (`npm run dev`), or if it's already running, call:
+   ```bash
+   curl -X POST http://localhost:3000/knowledge/reload
+   ```
+3. Check what's loaded:
+   ```bash
+   curl http://localhost:3000/knowledge/status
+   ```
+4. Ask the widget/channel a question covered by your docs — the model will ground its answer in the retrieved text and say it doesn't know when nothing matches.
+
+This works the same across every channel (website, Facebook, Instagram, WhatsApp, Gmail) since they all share `generateReply()`. There's no vector database or embeddings API involved — retrieval uses a lightweight TF-IDF match over your files (`src/core/knowledgeBase.ts`), which is enough for FAQs/docs in the tens-to-low-hundreds of pages. If you outgrow that, swap `knowledgeBase.ts` for a real vector store (e.g. Pinecone, pgvector) behind the same `retrieveContext()` function.
+
 ## Customizing the bot
 
 - Edit `BOT_PERSONA` in `.env` to change tone/instructions globally.

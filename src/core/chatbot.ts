@@ -1,6 +1,7 @@
 import { config } from "../config";
 import { conversationStore } from "./conversationStore";
 import { callLLM } from "./llmProvider";
+import { retrieveContext } from "./knowledgeBase";
 
 export type Channel = "website" | "facebook" | "instagram" | "whatsapp" | "gmail";
 
@@ -35,7 +36,8 @@ export interface ReplyOptions {
 export async function generateReply({ channel, userId, message, extraSystemContext }: ReplyOptions): Promise<string> {
   const history = conversationStore.getHistory(channel, userId);
 
-  const system = extraSystemContext ? `${systemPrompt(channel)}\n\n${extraSystemContext}` : systemPrompt(channel);
+  const knowledge = retrieveContext(message);
+  const system = [systemPrompt(channel), extraSystemContext, knowledge].filter(Boolean).join("\n\n");
 
   const reply = await callLLM(system, history, message);
 
