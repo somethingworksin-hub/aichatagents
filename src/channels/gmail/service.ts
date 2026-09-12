@@ -1,7 +1,8 @@
 import { gmail_v1, google } from "googleapis";
 import { config } from "../../config";
 import { generateReply } from "../../core/chatbot";
-import { getAuthorizedClient } from "./oauth";
+import { getTenant, listTenants, Tenant } from "../../core/tenant";
+import { getAuthorizedClientForTenant } from "./oauth";
 
 function decodeHeader(headers: gmail_v1.Schema$MessagePartHeader[] | undefined, name: string): string {
   return headers?.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? "";
@@ -59,16 +60,20 @@ function buildRawReply(opts: {
 }
 
 /**
- * Checks the inbox for unread messages, generates a Claude reply for each,
- * sends it, and marks the message as read (removes UNREAD label) so it isn't
- * processed twice. Run this on an interval (see poll.ts).
+ * Checks one tenant's inbox for unread messages, generates a reply for each
+ * using their configured AI provider/persona, sends it, and marks the
+ * message as read so it isn't processed twice.
  */
-export async function processUnreadMessages(): Promise<void> {
-  const auth = await getAuthorizedClient();
+export async function processUnreadMessagesForTenant(tenantId: string): Promise<{ processed: number }> {
+  const tenant = await getTenant(tenantId);
+  if (!tenant?.gmail?.tokens) {
+    throw new Error(`Tenant ${tenantId} hasn't authorized Gmail yet.`);
+  }
+
+  const auth = await getAuthorizedClientForTenant(tenantId);
   const gmail = google.gmail({ version: "v1", auth });
 
-  const profile = await gmail.users.getProfile({ userId: "me" });
-  const myEmail = (profile.data.emailAddress ?? "").toLowerCase();
+  const myEmail = (tenant.gmail.address ?? "").toLowerCase();
 
   const list = await gmail.users.messages.list({
     userId: "me",
@@ -76,6 +81,8 @@ export async function processUnreadMessages(): Promise<void> {
     q: "is:unread -in:chats",
     maxResults: 20,
   });
+
+  let processed = 0;
 
   for (const meta of list.data.messages ?? []) {
     if (!meta.id) continue;
@@ -90,14 +97,15 @@ export async function processUnreadMessages(): Promise<void> {
     const references = [decodeHeader(headers, "References"), messageId].filter(Boolean).join(" ");
     const body = extractPlainText(full.data.payload) || full.data.snippet || "";
 
-    if (!fromAddress || fromAddress === myEmail || config.gmail.ignoreSenders.includes(fromAddress)) {
-      // Don't auto-reply to ourselves, other bots in the loop, or explicitly ignored senders.
+    if (!fromAddress || fromAddress === myEmail) {
+      // Don't auto-reply to ourselves.
       await gmail.users.messages.modify({ userId: "me", id: meta.id, requestBody: { removeLabelIds: ["UNREAD"] } });
       continue;
     }
 
     try {
       const reply = await generateReply({
+        tenant,
         channel: "gmail",
         userId: fromAddress,
         message: body,
@@ -119,9 +127,30 @@ export async function processUnreadMessages(): Promise<void> {
       });
 
       await gmail.users.messages.modify({ userId: "me", id: meta.id, requestBody: { removeLabelIds: ["UNREAD"] } });
-      console.log(`[gmail] replied to ${fromAddress} (subject: "${subject}")`);
+      console.log(`[gmail] tenant ${tenantId} replied to ${fromAddress} (subject: "${subject}")`);
+      processed++;
     } catch (err) {
-      console.error(`[gmail] failed to process message ${meta.id}`, err);
+      console.error(`[gmail] tenant ${tenantId} failed to process message ${meta.id}`, err);
+    }
+  }
+
+  return { processed };
+}
+
+/**
+ * Polls every tenant that has connected Gmail. Used by the standalone
+ * `npm run gmail:poll` worker and by POST /gmail/poll when called without a
+ * specific tenantId.
+ */
+export async function processUnreadMessagesForAllTenants(): Promise<void> {
+  const tenants = await listTenants();
+  const withGmail = tenants.filter((t: Tenant) => t.gmail?.tokens);
+
+  for (const tenant of withGmail) {
+    try {
+      await processUnreadMessagesForTenant(tenant.id);
+    } catch (err) {
+      console.error(`[gmail] poll failed for tenant ${tenant.id}`, err);
     }
   }
 }

@@ -1,35 +1,31 @@
-import { config } from "../../config";
-import { hasStoredToken } from "./oauth";
-import { processUnreadMessages } from "./service";
+import { processUnreadMessagesForAllTenants } from "./service";
 
 /**
  * Standalone poller: `npm run gmail:poll`
- * Runs alongside (or instead of) the main server, checking for new unread
- * mail on an interval and auto-replying via the shared Claude engine.
+ * Runs alongside (or instead of) the main server, checking every tenant
+ * that has connected Gmail for new unread mail on an interval and
+ * auto-replying via each tenant's configured AI provider/persona.
  *
- * For production, prefer Gmail push notifications (Cloud Pub/Sub) over
- * polling — see README for the swap-in approach.
+ * On Cloud Run (which scales to zero when idle), prefer POST /gmail/poll
+ * triggered by Cloud Scheduler instead — see the README. This long-running
+ * process is meant for hosts that keep a background worker alive (Render
+ * background workers, a VPS, etc.).
  */
-async function main() {
-  if (!hasStoredToken()) {
-    console.error(
-      "[gmail] No stored token found. Start the server and visit /gmail/auth to authorize this app first."
-    );
-    process.exit(1);
-  }
+const POLL_INTERVAL_MS = Number(process.env.GMAIL_POLL_INTERVAL_MS || 60000);
 
-  console.log(`[gmail] polling every ${config.gmail.pollIntervalMs}ms`);
+async function main() {
+  console.log(`[gmail] polling all tenants every ${POLL_INTERVAL_MS}ms`);
 
   const tick = async () => {
     try {
-      await processUnreadMessages();
+      await processUnreadMessagesForAllTenants();
     } catch (err) {
       console.error("[gmail] poll tick failed", err);
     }
   };
 
   await tick();
-  setInterval(tick, config.gmail.pollIntervalMs);
+  setInterval(tick, POLL_INTERVAL_MS);
 }
 
 main();

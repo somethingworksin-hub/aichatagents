@@ -8,6 +8,15 @@
   <body style="font-family: sans-serif; max-width: 640px; margin: 60px auto; padding: 0 16px;">
     <h1>Your website</h1>
     <p>This page stands in for any page on your site. The chat launcher in the bottom-right corner is the widget.</p>
-    <script src="/widget.js" data-api-base="" data-bot-name="Chat with us"></script>
+    <p>Pass a tenant's site key in the URL to test it, e.g. <code>demo.html?siteKey=YOUR_SITE_KEY</code>.</p>
+    <script>
+      var siteKey = new URLSearchParams(window.location.search).get("siteKey") || "";
+      var s = document.createElement("script");
+      s.src = "/widget.js";
+      s.setAttribute("data-api-base", "");
+      s.setAttribute("data-bot-name", "Chat with us");
+      s.setAttribute("data-site-key", siteKey);
+      document.body.appendChild(s);
+    </script>
   </body>
 </html>

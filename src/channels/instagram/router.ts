@@ -1,14 +1,15 @@
 import { Router } from "express";
 import { config } from "../../config";
 import { generateReply } from "../../core/chatbot";
+import { findTenantByInstagramAccountId } from "../../core/tenant";
 import { sendMetaMessage, verifyMetaSignature } from "../meta/graphApi";
 
 export const instagramRouter = Router();
 
 // Instagram messaging rides on the same Graph API / webhook infrastructure as
 // Messenger, just with object === "instagram" and IGSIDs instead of PSIDs.
-// You can point Meta's webhook subscription for the "instagram" object at
-// this same endpoint (share the verify token, or use a distinct one if you prefer).
+// entry.id is the Instagram-scoped account id, which is how we know which
+// tenant this message belongs to (see Tenant.instagram.instagramAccountId).
 
 instagramRouter.get("/webhook/instagram", (req, res) => {
   const mode = req.query["hub.mode"];
@@ -36,13 +37,22 @@ instagramRouter.post("/webhook/instagram", async (req, res) => {
     if (body.object !== "instagram") return;
 
     for (const entry of body.entry ?? []) {
+      const instagramAccountId = entry.id as string | undefined;
+      if (!instagramAccountId) continue;
+
+      const tenant = await findTenantByInstagramAccountId(instagramAccountId);
+      if (!tenant?.instagram) {
+        console.warn(`[instagram] no tenant configured for account ${instagramAccountId}`);
+        continue;
+      }
+
       for (const event of entry.messaging ?? []) {
         const senderId = event.sender?.id;
         const text = event.message?.text;
         if (!senderId || !text || event.message?.is_echo) continue;
 
-        const reply = await generateReply({ channel: "instagram", userId: senderId, message: text });
-        await sendMetaMessage(senderId, reply);
+        const reply = await generateReply({ tenant, channel: "instagram", userId: senderId, message: text });
+        await sendMetaMessage(senderId, reply, tenant.instagram.pageAccessToken);
       }
     }
   } catch (err) {

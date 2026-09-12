@@ -7,8 +7,7 @@ import { facebookRouter } from "./channels/facebook/router";
 import { instagramRouter } from "./channels/instagram/router";
 import { whatsappRouter } from "./channels/whatsapp/router";
 import { gmailRouter } from "./channels/gmail/router";
-import { knowledgeRouter } from "./channels/knowledge/router";
-import { reloadKnowledgeBase } from "./core/knowledgeBase";
+import { adminRouter } from "./channels/admin/router";
 
 const app = express();
 
@@ -23,11 +22,11 @@ app.use(
   })
 );
 
-app.use(
-  cors({
-    origin: config.website.allowedOrigins.includes("*") ? true : config.website.allowedOrigins,
-  })
-);
+// The website widget can be embedded on any tenant's site, and identifies
+// itself with a per-tenant siteKey rather than a fixed origin allowlist, so
+// CORS itself stays open — see Tenant.website.allowedOrigins if you want to
+// additionally enforce per-tenant origin checks inside the website router.
+app.use(cors({ origin: true }));
 
 app.use(express.static(path.join(__dirname, "..", "public")));
 
@@ -38,9 +37,7 @@ app.use(facebookRouter);
 app.use(instagramRouter);
 app.use(whatsappRouter);
 app.use(gmailRouter);
-app.use(knowledgeRouter);
-
-reloadKnowledgeBase();
+app.use(adminRouter);
 
 app.listen(config.port, () => {
   console.log(`AI chat agents server listening on port ${config.port}`);
@@ -48,5 +45,6 @@ app.listen(config.port, () => {
   console.log(`  Facebook webhook:    http://localhost:${config.port}/webhook/facebook`);
   console.log(`  Instagram webhook:   http://localhost:${config.port}/webhook/instagram`);
   console.log(`  WhatsApp webhook:    http://localhost:${config.port}/webhook/whatsapp`);
-  console.log(`  Gmail auth:          http://localhost:${config.port}/gmail/auth`);
+  console.log(`  Gmail auth:          http://localhost:${config.port}/gmail/auth?tenantId=YOUR_TENANT_ID`);
+  console.log(`  Admin API:           http://localhost:${config.port}/admin/tenants`);
 });

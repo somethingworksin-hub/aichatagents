@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { config } from "../../config";
 import { generateReply } from "../../core/chatbot";
+import { findTenantByFacebookPageId } from "../../core/tenant";
 import { sendMetaMessage, verifyMetaSignature } from "../meta/graphApi";
 
 export const facebookRouter = Router();
@@ -18,7 +19,8 @@ facebookRouter.get("/webhook/facebook", (req, res) => {
   }
 });
 
-// Step 2: Meta POSTs every Page message event here.
+// Step 2: Meta POSTs every Page message event here. entry.id is the Page ID,
+// which is how we know which tenant this message belongs to.
 facebookRouter.post("/webhook/facebook", async (req, res) => {
   const signature = req.header("x-hub-signature-256");
   const rawBody = (req as any).rawBody as Buffer | undefined;
@@ -34,13 +36,22 @@ facebookRouter.post("/webhook/facebook", async (req, res) => {
     if (body.object !== "page") return;
 
     for (const entry of body.entry ?? []) {
+      const pageId = entry.id as string | undefined;
+      if (!pageId) continue;
+
+      const tenant = await findTenantByFacebookPageId(pageId);
+      if (!tenant?.facebook) {
+        console.warn(`[facebook] no tenant configured for page ${pageId}`);
+        continue;
+      }
+
       for (const event of entry.messaging ?? []) {
         const senderId = event.sender?.id;
         const text = event.message?.text;
         if (!senderId || !text || event.message?.is_echo) continue;
 
-        const reply = await generateReply({ channel: "facebook", userId: senderId, message: text });
-        await sendMetaMessage(senderId, reply);
+        const reply = await generateReply({ tenant, channel: "facebook", userId: senderId, message: text });
+        await sendMetaMessage(senderId, reply, tenant.facebook.pageAccessToken);
       }
     }
   } catch (err) {

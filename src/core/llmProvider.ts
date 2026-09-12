@@ -1,31 +1,50 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
-import { config } from "../config";
 import { ChatMessage } from "./conversationStore";
 
-let anthropicClient: Anthropic | null = null;
-let openaiClient: OpenAI | null = null;
+// One SDK client per (provider, apiKey) pair, reused across requests/tenants
+// instead of constructing a fresh client on every message.
+const anthropicClients = new Map<string, Anthropic>();
+const openaiClients = new Map<string, OpenAI>();
 
-function getAnthropic(): Anthropic {
-  if (!anthropicClient) anthropicClient = new Anthropic({ apiKey: config.anthropic.apiKey });
-  return anthropicClient;
+function getAnthropic(apiKey: string): Anthropic {
+  let client = anthropicClients.get(apiKey);
+  if (!client) {
+    client = new Anthropic({ apiKey });
+    anthropicClients.set(apiKey, client);
+  }
+  return client;
 }
 
-function getOpenAI(): OpenAI {
-  if (!openaiClient) openaiClient = new OpenAI({ apiKey: config.openai.apiKey });
-  return openaiClient;
+function getOpenAI(apiKey: string): OpenAI {
+  let client = openaiClients.get(apiKey);
+  if (!client) {
+    client = new OpenAI({ apiKey });
+    openaiClients.set(apiKey, client);
+  }
+  return client;
+}
+
+export interface LLMConfig {
+  provider: "anthropic" | "openai";
+  apiKey: string;
+  model: string;
 }
 
 /**
- * Calls whichever LLM provider is configured (AI_PROVIDER=anthropic|openai)
- * and returns the plain-text reply. Both branches take the same shape of
- * input so the rest of the app never needs to know which provider is active.
+ * Calls whichever LLM provider/credentials this tenant is configured with
+ * and returns the plain-text reply.
  */
-export async function callLLM(system: string, history: ChatMessage[], message: string): Promise<string> {
-  if (config.ai.provider === "openai") {
-    const openai = getOpenAI();
+export async function callLLM(
+  llm: LLMConfig,
+  system: string,
+  history: ChatMessage[],
+  message: string
+): Promise<string> {
+  if (llm.provider === "openai") {
+    const openai = getOpenAI(llm.apiKey);
     const completion = await openai.chat.completions.create({
-      model: config.openai.model,
+      model: llm.model,
       max_tokens: 1024,
       messages: [
         { role: "system", content: system },
@@ -37,9 +56,9 @@ export async function callLLM(system: string, history: ChatMessage[], message: s
     return completion.choices[0]?.message?.content?.trim() || "Sorry, I couldn't come up with a reply just now.";
   }
 
-  const anthropic = getAnthropic();
+  const anthropic = getAnthropic(llm.apiKey);
   const response = await anthropic.messages.create({
-    model: config.anthropic.model,
+    model: llm.model,
     max_tokens: 1024,
     system,
     messages: [

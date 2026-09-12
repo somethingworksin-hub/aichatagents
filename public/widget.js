@@ -2,13 +2,19 @@
  * Embeddable chat widget.
  *
  * Usage: add this to any page on your site:
- *   <script src="https://your-server.example.com/widget.js" data-api-base="https://your-server.example.com"></script>
+ *   <script src="https://your-server.example.com/widget.js"
+ *           data-api-base="https://your-server.example.com"
+ *           data-site-key="YOUR_TENANT_SITE_KEY"></script>
+ *
+ * data-site-key identifies which tenant this widget belongs to — get it
+ * from the admin API when the tenant is created (Tenant.website.siteKey).
  */
 (function () {
   var scriptTag = document.currentScript;
   var apiBase = (scriptTag && scriptTag.getAttribute("data-api-base")) || "";
+  var siteKey = (scriptTag && scriptTag.getAttribute("data-site-key")) || "";
   var botName = (scriptTag && scriptTag.getAttribute("data-bot-name")) || "Chat with us";
-  var storageKey = "aichat_session_id";
+  var storageKey = "aichat_session_id_" + siteKey;
 
   function getSessionId() {
     try {
@@ -83,6 +89,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          siteKey: siteKey,
           sessionId: getSessionId(),
           message: text,
           pageUrl: window.location.href,

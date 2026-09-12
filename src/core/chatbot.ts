@@ -1,11 +1,16 @@
-import { config } from "../config";
-import { conversationStore } from "./conversationStore";
+import { Tenant } from "./tenant";
+import { getHistory, appendMessages } from "./conversationStore";
 import { callLLM } from "./llmProvider";
 import { retrieveContext } from "./knowledgeBase";
 
 export type Channel = "website" | "facebook" | "instagram" | "whatsapp" | "gmail";
 
-function systemPrompt(channel: Channel): string {
+const DEFAULT_MODEL: Record<Tenant["ai"]["provider"], string> = {
+  anthropic: "claude-sonnet-4-5-20250929",
+  openai: "gpt-4o-mini",
+};
+
+function systemPrompt(tenant: Tenant, channel: Channel): string {
   const channelNotes: Record<Channel, string> = {
     website: "You are replying inside a live chat widget on the company website. Keep replies short and scannable.",
     facebook: "You are replying inside Facebook Messenger. Keep replies conversational and short.",
@@ -15,34 +20,49 @@ function systemPrompt(channel: Channel): string {
   };
 
   return [
-    config.bot.persona,
-    `Your name is ${config.bot.name}.`,
+    tenant.bot.persona,
+    `Your name is ${tenant.bot.name}.`,
     channelNotes[channel],
     "If you don't know the answer or the request needs a human, say so plainly instead of guessing.",
   ].join("\n");
 }
 
 export interface ReplyOptions {
+  tenant: Tenant;
   channel: Channel;
-  userId: string; // stable id for this user on this channel (PSID, wa_id, thread/email address, session id, etc.)
+  userId: string; // stable id for this user on this channel (PSID, wa_id, email address, session id, etc.)
   message: string;
   extraSystemContext?: string; // e.g. subject line for email, page URL for website
 }
 
 /**
- * Generates a reply using the configured LLM provider (Claude or OpenAI, via
- * AI_PROVIDER), with per-user conversation memory scoped to the channel.
+ * Generates a reply using this tenant's configured LLM provider/persona,
+ * with per-tenant, per-user conversation memory scoped to the channel, and
+ * grounded in this tenant's knowledge base when relevant.
  */
-export async function generateReply({ channel, userId, message, extraSystemContext }: ReplyOptions): Promise<string> {
-  const history = conversationStore.getHistory(channel, userId);
+export async function generateReply({ tenant, channel, userId, message, extraSystemContext }: ReplyOptions): Promise<string> {
+  const [history, knowledge] = await Promise.all([
+    getHistory(tenant.id, channel, userId),
+    retrieveContext(tenant.id, message),
+  ]);
 
-  const knowledge = retrieveContext(message);
-  const system = [systemPrompt(channel), extraSystemContext, knowledge].filter(Boolean).join("\n\n");
+  const system = [systemPrompt(tenant, channel), extraSystemContext, knowledge].filter(Boolean).join("\n\n");
 
-  const reply = await callLLM(system, history, message);
+  const reply = await callLLM(
+    {
+      provider: tenant.ai.provider,
+      apiKey: tenant.ai.apiKey,
+      model: tenant.ai.model || DEFAULT_MODEL[tenant.ai.provider],
+    },
+    system,
+    history,
+    message
+  );
 
-  conversationStore.append(channel, userId, { role: "user", content: message, at: Date.now() });
-  conversationStore.append(channel, userId, { role: "assistant", content: reply, at: Date.now() });
+  await appendMessages(tenant.id, channel, userId, [
+    { role: "user", content: message, at: Date.now() },
+    { role: "assistant", content: reply, at: Date.now() },
+  ]);
 
   return reply;
 }

@@ -1,3 +1,5 @@
+import { db } from "../firebaseAdmin";
+
 export type ChatRole = "user" | "assistant";
 
 export interface ChatMessage {
@@ -6,51 +8,51 @@ export interface ChatMessage {
   at: number;
 }
 
-interface Conversation {
-  messages: ChatMessage[];
-  updatedAt: number;
-}
-
 const MAX_TURNS = 20;
-const TTL_MS = 1000 * 60 * 60 * 6; // 6 hours of idle time before a thread resets
+
+function threadRef(tenantId: string, channel: string, userId: string) {
+  // Firestore doc ids can't contain "/", which channel user ids sometimes do
+  // (e.g. email addresses don't, but be defensive for anything that might).
+  const safeUserId = encodeURIComponent(userId);
+  return db
+    .collection("tenants")
+    .doc(tenantId)
+    .collection("conversations")
+    .doc(`${channel}_${safeUserId}`);
+}
 
 /**
- * In-memory per-channel conversation memory, keyed by "<channel>:<userId>".
- * Swap this out for Redis/Postgres if you need it to survive restarts
- * or run across multiple server instances.
+ * Per-tenant, per-channel, per-user conversation memory, persisted in
+ * Firestore so it survives Cloud Run cold starts/restarts and is shared
+ * across instances. Each thread document stores its own trimmed message
+ * array (simplest structure for a chat-sized history; move to a messages
+ * subcollection if you need to keep unbounded history per thread later).
  */
-class ConversationStore {
-  private conversations = new Map<string, Conversation>();
-
-  private key(channel: string, userId: string): string {
-    return `${channel}:${userId}`;
-  }
-
-  getHistory(channel: string, userId: string): ChatMessage[] {
-    const key = this.key(channel, userId);
-    const convo = this.conversations.get(key);
-    if (!convo) return [];
-    if (Date.now() - convo.updatedAt > TTL_MS) {
-      this.conversations.delete(key);
-      return [];
-    }
-    return convo.messages;
-  }
-
-  append(channel: string, userId: string, message: ChatMessage): void {
-    const key = this.key(channel, userId);
-    const convo = this.conversations.get(key) ?? { messages: [], updatedAt: Date.now() };
-    convo.messages.push(message);
-    if (convo.messages.length > MAX_TURNS * 2) {
-      convo.messages = convo.messages.slice(-MAX_TURNS * 2);
-    }
-    convo.updatedAt = Date.now();
-    this.conversations.set(key, convo);
-  }
-
-  reset(channel: string, userId: string): void {
-    this.conversations.delete(this.key(channel, userId));
-  }
+export async function getHistory(tenantId: string, channel: string, userId: string): Promise<ChatMessage[]> {
+  const snap = await threadRef(tenantId, channel, userId).get();
+  if (!snap.exists) return [];
+  const data = snap.data();
+  return (data?.messages as ChatMessage[]) ?? [];
 }
 
-export const conversationStore = new ConversationStore();
+export async function appendMessages(
+  tenantId: string,
+  channel: string,
+  userId: string,
+  newMessages: ChatMessage[]
+): Promise<void> {
+  const ref = threadRef(tenantId, channel, userId);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const existing = (snap.exists ? (snap.data()?.messages as ChatMessage[]) : []) ?? [];
+    let messages = [...existing, ...newMessages];
+    if (messages.length > MAX_TURNS * 2) {
+      messages = messages.slice(-MAX_TURNS * 2);
+    }
+    tx.set(ref, { messages, updatedAt: Date.now() }, { merge: true });
+  });
+}
+
+export async function resetHistory(tenantId: string, channel: string, userId: string): Promise<void> {
+  await threadRef(tenantId, channel, userId).delete();
+}

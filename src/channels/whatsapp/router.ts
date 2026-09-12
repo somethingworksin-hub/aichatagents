@@ -2,16 +2,17 @@ import { Router } from "express";
 import fetch from "node-fetch";
 import { config } from "../../config";
 import { generateReply } from "../../core/chatbot";
+import { findTenantByWhatsappPhoneNumberId } from "../../core/tenant";
 
 export const whatsappRouter = Router();
 
-async function sendWhatsAppMessage(to: string, text: string): Promise<void> {
-  const url = `https://graph.facebook.com/${config.whatsapp.graphApiVersion}/${config.whatsapp.phoneNumberId}/messages`;
+async function sendWhatsAppMessage(to: string, text: string, phoneNumberId: string, accessToken: string): Promise<void> {
+  const url = `https://graph.facebook.com/${config.whatsapp.graphApiVersion}/${phoneNumberId}/messages`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${config.whatsapp.accessToken}`,
+      Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify({
       messaging_product: "whatsapp",
@@ -48,13 +49,22 @@ whatsappRouter.post("/webhook/whatsapp", async (req, res) => {
     for (const entry of body.entry ?? []) {
       for (const change of entry.changes ?? []) {
         const value = change.value ?? {};
+        const phoneNumberId = value.metadata?.phone_number_id as string | undefined;
+        if (!phoneNumberId) continue;
+
+        const tenant = await findTenantByWhatsappPhoneNumberId(phoneNumberId);
+        if (!tenant?.whatsapp) {
+          console.warn(`[whatsapp] no tenant configured for phone number id ${phoneNumberId}`);
+          continue;
+        }
+
         for (const message of value.messages ?? []) {
           const from = message.from; // sender's WhatsApp id (phone number)
           const text = message.text?.body;
           if (!from || !text) continue;
 
-          const reply = await generateReply({ channel: "whatsapp", userId: from, message: text });
-          await sendWhatsAppMessage(from, reply);
+          const reply = await generateReply({ tenant, channel: "whatsapp", userId: from, message: text });
+          await sendWhatsAppMessage(from, reply, phoneNumberId, tenant.whatsapp.accessToken);
         }
       }
     }

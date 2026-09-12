@@ -1,22 +1,28 @@
 import { Router } from "express";
 import crypto from "crypto";
 import { generateReply } from "../../core/chatbot";
+import { findTenantByWebsiteSiteKey } from "../../core/tenant";
 
 export const websiteRouter = Router();
 
 /**
  * POST /api/chat/website
- * body: { sessionId?: string, message: string, pageUrl?: string }
+ * body: { siteKey: string, sessionId?: string, message: string, pageUrl?: string }
  * Returns: { sessionId, reply }
  *
- * sessionId ties messages to the same conversation memory. If the caller
- * doesn't have one yet (first message), the server mints one and returns it.
+ * siteKey identifies which tenant this widget belongs to (see
+ * Tenant.website.siteKey) — the widget snippet embeds it. sessionId ties
+ * messages to the same conversation memory; if the caller doesn't have one
+ * yet (first message), the server mints one and returns it.
  */
 websiteRouter.post("/api/chat/website", async (req, res) => {
   try {
-    const { message, pageUrl } = req.body ?? {};
+    const { message, pageUrl, siteKey } = req.body ?? {};
     let { sessionId } = req.body ?? {};
 
+    if (!siteKey || typeof siteKey !== "string") {
+      return res.status(400).json({ error: "siteKey is required" });
+    }
     if (!message || typeof message !== "string") {
       return res.status(400).json({ error: "message is required" });
     }
@@ -24,7 +30,13 @@ websiteRouter.post("/api/chat/website", async (req, res) => {
       sessionId = crypto.randomUUID();
     }
 
+    const tenant = await findTenantByWebsiteSiteKey(siteKey);
+    if (!tenant) {
+      return res.status(404).json({ error: "Unknown siteKey." });
+    }
+
     const reply = await generateReply({
+      tenant,
       channel: "website",
       userId: sessionId,
       message,

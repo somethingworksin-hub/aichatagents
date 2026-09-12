@@ -1,10 +1,9 @@
-import fs from "fs";
-import path from "path";
+import { db } from "../firebaseAdmin";
 
-const KNOWLEDGE_DIR = path.join(process.cwd(), "knowledge");
 const MAX_CHUNK_CHARS = 800;
 const TOP_K = 4;
 const MIN_SCORE = 0.05;
+const CACHE_TTL_MS = 60_000;
 
 const STOPWORDS = new Set(
   "a an the is are was were be been being to of in on for with and or but if then so as at by from this that it its your you we our i my me they them he she his her not no do does did can could should would will just about into over under how what when where why who which".split(
@@ -12,15 +11,23 @@ const STOPWORDS = new Set(
   )
 );
 
-interface Chunk {
+interface StoredChunk {
   text: string;
   source: string;
+}
+
+interface IndexedChunk extends StoredChunk {
+  id: string;
   termFreq: Map<string, number>;
 }
 
-let chunks: Chunk[] = [];
-let idf: Map<string, number> = new Map();
-let loaded = false;
+interface TenantIndex {
+  chunks: IndexedChunk[];
+  idf: Map<string, number>;
+  expiresAt: number;
+}
+
+const cache = new Map<string, TenantIndex>();
 
 function tokenize(text: string): string[] {
   return text
@@ -49,62 +56,72 @@ function splitIntoChunks(text: string): string[] {
   return result;
 }
 
-function walkFiles(dir: string): string[] {
-  if (!fs.existsSync(dir)) return [];
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  let files: string[] = [];
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      files = files.concat(walkFiles(full));
-    } else if (/\.(txt|md)$/i.test(entry.name)) {
-      files.push(full);
-    }
-  }
-  return files;
+function knowledgeCollection(tenantId: string) {
+  return db.collection("tenants").doc(tenantId).collection("knowledge");
 }
 
 /**
- * Loads every .txt/.md file under ./knowledge, splits each into paragraph-sized
- * chunks, and builds a simple TF-IDF index so replies can be grounded in your
- * own content without needing a vector database. Call reloadKnowledgeBase()
- * again any time you add/edit files (or hit POST /knowledge/reload).
+ * Splits raw text into paragraph-sized chunks and stores each as its own
+ * Firestore document for this tenant. Call once per source document (an
+ * uploaded file, a pasted FAQ, etc.) — `source` is just a label shown back
+ * in retrieved context, e.g. a filename or "Refund Policy".
  */
-export function reloadKnowledgeBase(): { files: number; chunks: number } {
-  const files = walkFiles(KNOWLEDGE_DIR);
-  chunks = [];
-
-  for (const file of files) {
-    const raw = fs.readFileSync(file, "utf-8");
-    const source = path.relative(KNOWLEDGE_DIR, file);
-    for (const text of splitIntoChunks(raw)) {
-      const termFreq = new Map<string, number>();
-      for (const term of tokenize(text)) {
-        termFreq.set(term, (termFreq.get(term) ?? 0) + 1);
-      }
-      chunks.push({ text, source, termFreq });
-    }
+export async function addKnowledgeText(tenantId: string, source: string, text: string): Promise<number> {
+  const chunks = splitIntoChunks(text);
+  const batch = db.batch();
+  for (const chunkText of chunks) {
+    const ref = knowledgeCollection(tenantId).doc();
+    batch.set(ref, { text: chunkText, source });
   }
+  await batch.commit();
+  cache.delete(tenantId);
+  return chunks.length;
+}
 
-  // Document frequency -> IDF, so common words across the whole knowledge base
-  // count for less than distinctive ones.
+export async function clearKnowledge(tenantId: string): Promise<void> {
+  const snap = await knowledgeCollection(tenantId).get();
+  const batch = db.batch();
+  snap.docs.forEach((doc) => batch.delete(doc.ref));
+  await batch.commit();
+  cache.delete(tenantId);
+}
+
+export async function listKnowledgeSources(tenantId: string): Promise<{ id: string; source: string }[]> {
+  const snap = await knowledgeCollection(tenantId).get();
+  return snap.docs.map((doc) => ({ id: doc.id, source: (doc.data().source as string) ?? "" }));
+}
+
+async function loadIndex(tenantId: string): Promise<TenantIndex> {
+  const cached = cache.get(tenantId);
+  if (cached && cached.expiresAt > Date.now()) return cached;
+
+  const snap = await knowledgeCollection(tenantId).get();
+  const chunks: IndexedChunk[] = snap.docs.map((doc) => {
+    const data = doc.data() as StoredChunk;
+    const termFreq = new Map<string, number>();
+    for (const term of tokenize(data.text)) {
+      termFreq.set(term, (termFreq.get(term) ?? 0) + 1);
+    }
+    return { id: doc.id, text: data.text, source: data.source, termFreq };
+  });
+
   const docFreq = new Map<string, number>();
   for (const chunk of chunks) {
     for (const term of chunk.termFreq.keys()) {
       docFreq.set(term, (docFreq.get(term) ?? 0) + 1);
     }
   }
-  idf = new Map();
+  const idf = new Map<string, number>();
   for (const [term, df] of docFreq) {
     idf.set(term, Math.log((chunks.length + 1) / (df + 0.5)) + 1);
   }
 
-  loaded = true;
-  console.log(`[knowledge] loaded ${files.length} file(s) into ${chunks.length} chunk(s)`);
-  return { files: files.length, chunks: chunks.length };
+  const index: TenantIndex = { chunks, idf, expiresAt: Date.now() + CACHE_TTL_MS };
+  cache.set(tenantId, index);
+  return index;
 }
 
-function scoreChunk(queryTerms: string[], chunk: Chunk): number {
+function scoreChunk(queryTerms: string[], chunk: IndexedChunk, idf: Map<string, number>): number {
   let score = 0;
   for (const term of queryTerms) {
     const tf = chunk.termFreq.get(term);
@@ -115,19 +132,21 @@ function scoreChunk(queryTerms: string[], chunk: Chunk): number {
 }
 
 /**
- * Returns up to TOP_K relevant chunks of knowledge-base text for the given
- * user message, formatted for inclusion in the system prompt. Empty string
- * if no knowledge base is loaded or nothing scores above the relevance floor.
+ * Returns up to TOP_K relevant chunks of this tenant's knowledge base for
+ * the given message, formatted for inclusion in the system prompt. Empty
+ * string if the tenant has no knowledge base or nothing scores above the
+ * relevance floor. Retrieval uses lightweight TF-IDF over an in-memory,
+ * per-tenant index refreshed from Firestore every CACHE_TTL_MS.
  */
-export function retrieveContext(message: string): string {
-  if (!loaded) reloadKnowledgeBase();
+export async function retrieveContext(tenantId: string, message: string): Promise<string> {
+  const { chunks, idf } = await loadIndex(tenantId);
   if (chunks.length === 0) return "";
 
   const queryTerms = tokenize(message);
   if (queryTerms.length === 0) return "";
 
   const scored = chunks
-    .map((chunk) => ({ chunk, score: scoreChunk(queryTerms, chunk) }))
+    .map((chunk) => ({ chunk, score: scoreChunk(queryTerms, chunk, idf) }))
     .filter((s) => s.score >= MIN_SCORE)
     .sort((a, b) => b.score - a.score)
     .slice(0, TOP_K);
@@ -140,8 +159,4 @@ export function retrieveContext(message: string): string {
     "Reference information from our knowledge base (use it to answer if relevant; ignore it if it isn't):",
     blocks,
   ].join("\n\n");
-}
-
-export function knowledgeBaseStatus(): { loaded: boolean; chunks: number } {
-  return { loaded, chunks: chunks.length };
 }

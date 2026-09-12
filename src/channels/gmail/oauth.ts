@@ -1,9 +1,6 @@
-import fs from "fs";
-import path from "path";
 import { google } from "googleapis";
 import { config } from "../../config";
-
-const TOKEN_PATH = path.join(process.cwd(), "gmail-token.json");
+import { getTenant, updateTenant } from "../../core/tenant";
 
 export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
@@ -15,39 +12,52 @@ export function createOAuthClient() {
   return new google.auth.OAuth2(config.gmail.clientId, config.gmail.clientSecret, config.gmail.redirectUri);
 }
 
-export function getAuthUrl(): string {
+// The `state` param round-trips through Google's OAuth flow untouched, so we
+// use it to remember which tenant is authorizing (this is one shared Google
+// OAuth client used across every tenant's own inbox).
+export function getAuthUrl(tenantId: string): string {
   const client = createOAuthClient();
   return client.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
     scope: GMAIL_SCOPES,
+    state: tenantId,
   });
 }
 
-export async function exchangeCodeForToken(code: string) {
+/**
+ * Exchanges the OAuth code for tokens, fetches the authorized inbox's own
+ * address, and stores both on the tenant's Firestore document.
+ */
+export async function exchangeCodeForToken(tenantId: string, code: string): Promise<string> {
   const client = createOAuthClient();
   const { tokens } = await client.getToken(code);
-  fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2));
-  return tokens;
-}
-
-export function hasStoredToken(): boolean {
-  return fs.existsSync(TOKEN_PATH);
-}
-
-export async function getAuthorizedClient() {
-  if (!hasStoredToken()) {
-    throw new Error(
-      `No Gmail token found. Visit /gmail/auth on your running server (or run the OAuth flow) to authorize access first.`
-    );
-  }
-  const client = createOAuthClient();
-  const tokens = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
   client.setCredentials(tokens);
 
+  const gmail = google.gmail({ version: "v1", auth: client });
+  const profile = await gmail.users.getProfile({ userId: "me" });
+  const address = (profile.data.emailAddress ?? "").toLowerCase();
+
+  await updateTenant(tenantId, { gmail: { address, tokens } });
+  return address;
+}
+
+export async function getAuthorizedClientForTenant(tenantId: string) {
+  const tenant = await getTenant(tenantId);
+  if (!tenant?.gmail?.tokens) {
+    throw new Error(
+      `Tenant ${tenantId} hasn't authorized Gmail yet. Visit /gmail/auth?tenantId=${tenantId} to connect it.`
+    );
+  }
+
+  const client = createOAuthClient();
+  client.setCredentials(tenant.gmail.tokens);
+
   client.on("tokens", (newTokens) => {
-    const merged = { ...tokens, ...newTokens };
-    fs.writeFileSync(TOKEN_PATH, JSON.stringify(merged, null, 2));
+    const merged = { ...tenant.gmail!.tokens, ...newTokens };
+    updateTenant(tenantId, { gmail: { ...tenant.gmail, tokens: merged } }).catch((err) =>
+      console.error(`[gmail] failed to persist refreshed token for tenant ${tenantId}`, err)
+    );
   });
 
   return client;
