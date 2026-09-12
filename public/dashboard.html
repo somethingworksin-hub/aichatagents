@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>AI Chat Agents — Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #e3e6ea;
+    --text: #1a1d21;
+    --text-dim: #6b7280;
+    --accent: #111827;
+    --accent-fg: #ffffff;
+    --danger: #b91c1c;
+    --ok: #15803d;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+  }
+  a { color: inherit; }
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 8px 14px;
+  }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  button.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
+  button:disabled { opacity: .5; cursor: default; }
+  input, textarea, select {
+    font: inherit;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text);
+  }
+  textarea { resize: vertical; min-height: 70px; }
+  label { display: block; font-size: 12px; color: var(--text-dim); margin: 10px 0 4px; font-weight: 600; }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+
+  /* --- Login screen --- */
+  #login {
+    max-width: 420px;
+    margin: 12vh auto;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+  }
+  #login h1 { font-size: 18px; margin: 0 0 4px; }
+  #login p { color: var(--text-dim); margin: 0 0 18px; font-size: 13px; }
+  #login-error { color: var(--danger); font-size: 13px; margin-top: 10px; display: none; }
+
+  /* --- App shell --- */
+  #app { display: none; height: 100vh; }
+  #app.active { display: flex; }
+  #sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+  }
+  #sidebar-header {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #sidebar-header strong { font-size: 14px; }
+  #agent-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .agent-card {
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 4px;
+  }
+  .agent-card:hover { background: #f0f1f3; }
+  .agent-card.active { background: var(--accent); color: var(--accent-fg); }
+  .agent-card .name { font-weight: 600; }
+  .agent-card .meta { font-size: 11px; opacity: .7; margin-top: 2px; }
+  #sidebar-footer { padding: 12px; border-top: 1px solid var(--border); }
+  #sidebar-footer button { width: 100%; }
+
+  #main { flex: 1; overflow-y: auto; padding: 28px 40px; }
+  #empty-state { color: var(--text-dim); text-align: center; margin-top: 20vh; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .panel h2 { font-size: 15px; margin: 0 0 4px; }
+  .panel .sub { color: var(--text-dim); font-size: 12px; margin-bottom: 14px; }
+  .panel-header { display: flex; justify-content: space-between; align-items: flex-start; }
+
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #eef2f6;
+    color: var(--text-dim);
+    margin-right: 6px;
+  }
+  .badge.on { background: #dcfce7; color: var(--ok); }
+
+  .kv { font-family: ui-monospace, monospace; font-size: 12px; background: #f5f6f8; border-radius: 6px; padding: 8px 10px; word-break: break-all; }
+  .copy-row { display: flex; gap: 8px; align-items: flex-start; }
+  .copy-row .kv { flex: 1; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  td.actions { text-align: right; white-space: nowrap; }
+  td.actions button { padding: 4px 10px; font-size: 12px; }
+
+  .modal-backdrop {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.35);
+    align-items: center; justify-content: center;
+    z-index: 1000;
+  }
+  .modal-backdrop.active { display: flex; }
+  .modal {
+    background: var(--panel);
+    border-radius: var(--radius);
+    padding: 24px;
+    width: 480px;
+    max-width: 92vw;
+    max-height: 86vh;
+    overflow-y: auto;
+  }
+  .modal h2 { margin: 0 0 16px; font-size: 16px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+  .toast {
+    position: fixed;
+    bottom: 20px; right: 20px;
+    background: var(--accent); color: var(--accent-fg);
+    padding: 10px 16px; border-radius: 8px;
+    font-size: 13px;
+    opacity: 0; transform: translateY(10px);
+    transition: all .2s;
+    pointer-events: none;
+    z-index: 2000;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.error { background: var(--danger); }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
+  .tab-btn { border: none; background: none; padding: 8px 4px; margin-right: 16px; color: var(--text-dim); border-bottom: 2px solid transparent; border-radius: 0; }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <h1>AI Chat Agents</h1>
+  <p>Enter your admin key to manage agents. This talks directly to <code>/admin/*</code> on this same server.</p>
+  <label>API base (leave blank to use this page's origin)</label>
+  <input id="login-api-base" placeholder="https://your-server.example.com" />
+  <label>Admin API key</label>
+  <input id="login-key" type="password" placeholder="sk-admin-..." />
+  <div style="margin-top:16px;">
+    <button class="primary" style="width:100%" onclick="doLogin()">Connect</button>
+  </div>
+  <div id="login-error"></div>
+</div>
+
+<div id="app">
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <strong>Agents</strong>
+      <button class="primary" onclick="openNewAgentModal()">+ New</button>
+    </div>
+    <div id="agent-list"></div>
+    <div id="sidebar-footer">
+      <button onclick="logout()">Disconnect</button>
+    </div>
+  </div>
+  <div id="main">
+    <div id="empty-state">Select an agent, or create a new one.</div>
+    <div id="detail" style="display:none"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="new-agent-modal">
+  <div class="modal">
+    <h2>New Agent</h2>
+    <label>Agent / client name</label>
+    <input id="na-name" placeholder="Acme Co" />
+    <div class="row">
+      <div>
+        <label>AI provider</label>
+        <select id="na-provider">
+          <option value="openai">OpenAI</option>
+          <option value="anthropic">Anthropic (Claude)</option>
+        </select>
+      </div>
+      <div>
+        <label>Model (optional)</label>
+        <input id="na-model" placeholder="gpt-4o-mini" />
+      </div>
+    </div>
+    <label>API key (BYOK — this agent's own provider key)</label>
+    <input id="na-apikey" type="password" placeholder="sk-..." />
+    <label>Bot name</label>
+    <input id="na-botname" placeholder="Assistant" />
+    <label>Persona / instructions</label>
+    <textarea id="na-persona" placeholder="You are a friendly, concise support assistant for..."></textarea>
+    <label style="display:flex;align-items:center;gap:8px;font-weight:normal;margin-top:14px;">
+      <input type="checkbox" id="na-website" checked style="width:auto" /> Enable website widget for this agent
+    </label>
+    <div class="modal-actions">
+      <button onclick="closeModal('new-agent-modal')">Cancel</button>
+      <button class="primary" onclick="createAgent()">Create agent</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="add-knowledge-modal">
+  <div class="modal">
+    <h2>Add knowledge</h2>
+    <label>Source label</label>
+    <input id="kb-source" placeholder="Refund Policy" />
+    <label>Text (blank line between distinct facts/topics)</label>
+    <textarea id="kb-text" style="min-height:160px" placeholder="We offer a full refund within 14 days...&#10;&#10;After 14 days, refunds are case-by-case..."></textarea>
+    <div class="modal-actions">
+      <button onclick="closeModal('add-knowledge-modal')">Cancel</button>
+      <button class="primary" onclick="submitKnowledge()">Add</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let apiBase = "";
+let adminKey = "";
+let tenants = [];
+let selectedId = null;
+
+// --- persistence ---
+function loadSession() {
+  apiBase = localStorage.getItem("aca_api_base") || "";
+  adminKey = localStorage.getItem("aca_admin_key") || "";
+  return !!adminKey;
+}
+function saveSession() {
+  localStorage.setItem("aca_api_base", apiBase);
+  localStorage.setItem("aca_admin_key", adminKey);
+}
+function logout() {
+  localStorage.removeItem("aca_api_base");
+  localStorage.removeItem("aca_admin_key");
+  location.reload();
+}
+
+// --- api helper ---
+async function api(path, opts) {
+  opts = opts || {};
+  const headers = Object.assign({ "Content-Type": "application/json", "x-admin-key": adminKey }, opts.headers || {});
+  const res = await fetch(apiBase + path, Object.assign({}, opts, { headers }));
+  if (res.status === 403) throw new Error("Admin key rejected (403). Check your key and try again.");
+  if (res.status === 503) throw new Error("Server has no ADMIN_API_KEY configured.");
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) throw new Error((data && data.error) || ("Request failed (" + res.status + ")"));
+  return data;
+}
+
+function toast(msg, isError) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = "toast show" + (isError ? " error" : "");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { el.className = "toast"; }, 3200);
+}
+
+// --- login ---
+async function doLogin() {
+  apiBase = document.getElementById("login-api-base").value.trim().replace(/\/$/, "");
+  adminKey = document.getElementById("login-key").value.trim();
+  const errEl = document.getElementById("login-error");
+  errEl.style.display = "none";
+  if (!adminKey) { errEl.textContent = "Enter your admin key."; errEl.style.display = "block"; return; }
+  try {
+    await api("/admin/tenants");
+    saveSession();
+    boot();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.style.display = "block";
+  }
+}
+
+function showLogin() {
+  document.getElementById("login").style.display = "block";
+  document.getElementById("app").classList.remove("active");
+}
+
+async function boot() {
+  document.getElementById("login").style.display = "none";
+  document.getElementById("app").classList.add("active");
+  await refreshTenants();
+}
+
+// --- tenants list ---
+async function refreshTenants() {
+  try {
+    tenants = await api("/admin/tenants");
+  } catch (e) {
+    toast(e.message, true);
+    if (/403/.test(e.message) || /rejected/.test(e.message)) { logout(); }
+    return;
+  }
+  renderAgentList();
+  if (selectedId && tenants.find(t => t.id === selectedId)) {
+    renderDetail(selectedId);
+  }
+}
+
+function renderAgentList() {
+  const el = document.getElementById("agent-list");
+  el.innerHTML = "";
+  tenants.forEach(t => {
+    const channels = [];
+    if (t.website) channels.push("Website");
+    if (t.facebook) channels.push("Facebook");
+    if (t.instagram) channels.push("Instagram");
+    if (t.whatsapp) channels.push("WhatsApp");
+    if (t.gmail && t.gmail.tokens) channels.push("Gmail");
+    const card = document.createElement("div");
+    card.className = "agent-card" + (t.id === selectedId ? " active" : "");
+    card.onclick = () => selectAgent(t.id);
+    card.innerHTML = '<div class="name"></div><div class="meta"></div>';
+    card.querySelector(".name").textContent = t.name;
+    card.querySelector(".meta").textContent = channels.length ? channels.join(" · ") : "No channels connected";
+    el.appendChild(card);
+  });
+}
+
+function selectAgent(id) {
+  selectedId = id;
+  renderAgentList();
+  renderDetail(id);
+}
+
+function openNewAgentModal() {
+  document.getElementById("na-name").value = "";
+  document.getElementById("na-provider").value = "openai";
+  document.getElementById("na-model").value = "";
+  document.getElementById("na-apikey").value = "";
+  document.getElementById("na-botname").value = "Assistant";
+  document.getElementById("na-persona").value = "You are a friendly, concise support assistant.";
+  document.getElementById("na-website").checked = true;
+  document.getElementById("new-agent-modal").classList.add("active");
+}
+function closeModal(id) { document.getElementById(id).classList.remove("active"); }
+
+async function createAgent() {
+  const name = document.getElementById("na-name").value.trim();
+  const apiKey = document.getElementById("na-apikey").value.trim();
+  const botName = document.getElementById("na-botname").value.trim();
+  const persona = document.getElementById("na-persona").value.trim();
+  if (!name || !apiKey || !botName || !persona) { toast("Fill in all required fields.", true); return; }
+
+  const body = {
+    name,
+    ai: { provider: document.getElementById("na-provider").value, apiKey, model: document.getElementById("na-model").value.trim() || undefined },
+    bot: { name: botName, persona },
+  };
+  if (document.getElementById("na-website").checked) body.website = {};
+
+  try {
+    const tenant = await api("/admin/tenants", { method: "POST", body: JSON.stringify(body) });
+    closeModal("new-agent-modal");
+    toast("Agent created.");
+    await refreshTenants();
+    selectAgent(tenant.id);
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+async function deleteAgent(id) {
+  if (!confirm("Delete this agent and its knowledge base? Channel connections will stop working. This can't be undone.")) return;
+  try {
+    await api("/admin/tenants/" + id, { method: "DELETE" });
+    toast("Agent deleted.");
+    selectedId = null;
+    document.getElementById("detail").style.display = "none";
+    document.getElementById("empty-state").style.display = "block";
+    await refreshTenants();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+// --- detail view ---
+function maskSecret(s) {
+  if (!s) return "";
+  if (s.length <= 8) return "••••••••";
+  return s.slice(0, 4) + "•".repeat(Math.max(4, s.length - 8)) + s.slice(-4);
+}
+
+async function renderDetail(id) {
+  const tenant = tenants.find(t => t.id === id);
+  if (!tenant) return;
+  document.getElementById("empty-state").style.display = "none";
+  const el = document.getElementById("detail");
+  el.style.display = "block";
+
+  const origin = apiBase || window.location.origin;
+
+  el.innerHTML = `
+    <div class="panel">
+      <div class="panel-header">
+        <div>
+          <h2>${escapeHtml(tenant.name)}</h2>
+          <div class="sub">Agent ID: <code>${tenant.id}</code></div>
+        </div>
+        <button class="danger" onclick="deleteAgent('${tenant.id}')">Delete agent</button>
+      </div>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="overview" onclick="switchTab(this,'overview')">Overview</button>
+        <button class="tab-btn" data-tab="channels" onclick="switchTab(this,'channels')">Channels</button>
+        <button class="tab-btn" data-tab="knowledge" onclick="switchTab(this,'knowledge')">Data sources</button>
+      </div>
+
+      <div class="tab-panel active" data-panel="overview">
+        <label>Bot name</label>
+        <input id="ov-botname" value="${escapeAttr(tenant.bot.name)}" />
+        <label>Persona / instructions</label>
+        <textarea id="ov-persona" style="min-height:120px">${escapeHtml(tenant.bot.persona)}</textarea>
+        <div class="row">
+          <div>
+            <label>AI provider</label>
+            <select id="ov-provider">
+              <option value="openai" ${tenant.ai.provider === "openai" ? "selected" : ""}>OpenAI</option>
+              <option value="anthropic" ${tenant.ai.provider === "anthropic" ? "selected" : ""}>Anthropic (Claude)</option>
+            </select>
+          </div>
+          <div>
+            <label>Model</label>
+            <input id="ov-model" value="${escapeAttr(tenant.ai.model || "")}" placeholder="(provider default)" />
+          </div>
+        </div>
+        <label>API key (BYOK) — leave blank to keep the current key</label>
+        <input id="ov-apikey" type="password" placeholder="${maskSecret(tenant.ai.apiKey)}" />
+        <div style="margin-top:16px;">
+          <button class="primary" onclick="saveOverview('${tenant.id}')">Save changes</button>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="channels">
+        ${renderWebsiteSection(tenant, origin)}
+        ${renderFacebookSection(tenant)}
+        ${renderInstagramSection(tenant)}
+        ${renderWhatsappSection(tenant)}
+        ${renderGmailSection(tenant, origin)}
+      </div>
+
+      <div class="tab-panel" data-panel="knowledge">
+        <div class="panel-header" style="margin-bottom:10px;">
+          <div class="sub" style="margin:0;">Documents the agent can ground its answers in.</div>
+          <button class="primary" onclick="openKnowledgeModal('${tenant.id}')">+ Add</button>
+        </div>
+        <div id="kb-list">Loading…</div>
+      </div>
+    </div>
+  `;
+
+  loadKnowledge(tenant.id);
+}
+
+function switchTab(btn, name) {
+  btn.parentElement.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  const panelsRoot = btn.closest(".panel");
+  panelsRoot.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+  panelsRoot.querySelector('.tab-panel[data-panel="' + name + '"]').classList.add("active");
+}
+
+function renderWebsiteSection(tenant, origin) {
+  if (!tenant.website) {
+    return `<div style="margin-bottom:24px;">
+      <h2 style="font-size:14px;">Website <span class="badge">not enabled</span></h2>
+      <button onclick="enableWebsite('${tenant.id}')">Enable website widget</button>
+    </div>`;
+  }
+  const snippet = '<script src="' + origin + '/widget.js" data-api-base="' + origin + '" data-site-key="' + tenant.website.siteKey + '" data-bot-name="' + tenant.bot.name.replace(/"/g, "&quot;") + '"><\\/script>';
+  const demo = origin + "/demo.html?siteKey=" + tenant.website.siteKey;
+  return `<div style="margin-bottom:24px;">
+    <h2 style="font-size:14px;">Website <span class="badge on">connected</span></h2>
+    <label>Embed snippet — paste into the client's site</label>
+    <div class="copy-row">
+      <div class="kv" id="website-snippet">${escapeHtml(snippet)}</div>
+      <button onclick="copyText('website-snippet')">Copy</button>
+    </div>
+    <label>Test it</label>
+    <div class="kv"><a href="${demo}" target="_blank">${demo}</a></div>
+  </div>`;
+}
+
+function renderFacebookSection(tenant) {
+  const fb = tenant.facebook || {};
+  return `<div style="margin-bottom:24px;">
+    <h2 style="font-size:14px;">Facebook Messenger ${tenant.facebook ? '<span class="badge on">connected</span>' : '<span class="badge">not connected</span>'}</h2>
+    <div class="sub">Requires the shared Meta app already set up on the server (see README §5).</div>
+    <label>Page ID</label>
+    <input id="fb-pageid" value="${escapeAttr(fb.pageId || "")}" />
+    <label>Page access token</label>
+    <input id="fb-token" type="password" placeholder="${fb.pageAccessToken ? maskSecret(fb.pageAccessToken) : 'EAAxxxxx'}" />
+    <div style="margin-top:10px;"><button class="primary" onclick="saveFacebook('${tenant.id}')">Save</button></div>
+  </div>`;
+}
+
+function renderInstagramSection(tenant) {
+  const ig = tenant.instagram || {};
+  return `<div style="margin-bottom:24px;">
+    <h2 style="font-size:14px;">Instagram DMs ${tenant.instagram ? '<span class="badge on">connected</span>' : '<span class="badge">not connected</span>'}</h2>
+    <div class="sub">Rides on the same Meta app as Messenger (see README §6).</div>
+    <label>Instagram-scoped account ID</label>
+    <input id="ig-accountid" value="${escapeAttr(ig.instagramAccountId || "")}" />
+    <label>Page access token</label>
+    <input id="ig-token" type="password" placeholder="${ig.pageAccessToken ? maskSecret(ig.pageAccessToken) : 'EAAxxxxx'}" />
+    <div style="margin-top:10px;"><button class="primary" onclick="saveInstagram('${tenant.id}')">Save</button></div>
+  </div>`;
+}
+
+function renderWhatsappSection(tenant) {
+  const wa = tenant.whatsapp || {};
+  return `<div style="margin-bottom:24px;">
+    <h2 style="font-size:14px;">WhatsApp ${tenant.whatsapp ? '<span class="badge on">connected</span>' : '<span class="badge">not connected</span>'}</h2>
+    <div class="sub">Requires the shared WhatsApp app already set up on the server (see README §7).</div>
+    <label>Phone number ID</label>
+    <input id="wa-phoneid" value="${escapeAttr(wa.phoneNumberId || "")}" />
+    <label>Access token</label>
+    <input id="wa-token" type="password" placeholder="${wa.accessToken ? maskSecret(wa.accessToken) : 'EAAxxxxx'}" />
+    <div style="margin-top:10px;"><button class="primary" onclick="saveWhatsapp('${tenant.id}')">Save</button></div>
+  </div>`;
+}
+
+function renderGmailSection(tenant, origin) {
+  const connected = tenant.gmail && tenant.gmail.tokens;
+  const authUrl = origin + "/gmail/auth?tenantId=" + tenant.id;
+  return `<div style="margin-bottom:8px;">
+    <h2 style="font-size:14px;">Gmail ${connected ? '<span class="badge on">connected</span>' : '<span class="badge">not connected</span>'}</h2>
+    ${connected ? `<div class="sub">Replying as <strong>${escapeHtml(tenant.gmail.address || "")}</strong></div>` : ""}
+    <a href="${authUrl}" target="_blank"><button>${connected ? "Reconnect Gmail" : "Connect Gmail"}</button></a>
+  </div>`;
+}
+
+async function saveOverview(id) {
+  const patch = {
+    bot: { name: document.getElementById("ov-botname").value.trim(), persona: document.getElementById("ov-persona").value.trim() },
+    ai: { provider: document.getElementById("ov-provider").value, model: document.getElementById("ov-model").value.trim() || undefined },
+  };
+  const newKey = document.getElementById("ov-apikey").value.trim();
+  if (newKey) patch.ai.apiKey = newKey;
+  else patch.ai.apiKey = tenants.find(t => t.id === id).ai.apiKey; // keep existing — PATCH replaces the whole ai object server-side... see note below
+  try {
+    await api("/admin/tenants/" + id, { method: "PATCH", body: JSON.stringify(patch) });
+    toast("Saved.");
+    await refreshTenants();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function enableWebsite(id) {
+  try {
+    await api("/admin/tenants/" + id, { method: "PATCH", body: JSON.stringify({ website: {} }) });
+    toast("Website widget enabled.");
+    await refreshTenants();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function saveFacebook(id) {
+  const pageId = document.getElementById("fb-pageid").value.trim();
+  const tokenInput = document.getElementById("fb-token").value.trim();
+  const existing = tenants.find(t => t.id === id).facebook || {};
+  if (!pageId) { toast("Page ID is required.", true); return; }
+  const pageAccessToken = tokenInput || existing.pageAccessToken;
+  if (!pageAccessToken) { toast("Page access token is required.", true); return; }
+  try {
+    await api("/admin/tenants/" + id, { method: "PATCH", body: JSON.stringify({ facebook: { pageId, pageAccessToken } }) });
+    toast("Facebook connected.");
+    await refreshTenants();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function saveInstagram(id) {
+  const instagramAccountId = document.getElementById("ig-accountid").value.trim();
+  const tokenInput = document.getElementById("ig-token").value.trim();
+  const existing = tenants.find(t => t.id === id).instagram || {};
+  if (!instagramAccountId) { toast("Instagram account ID is required.", true); return; }
+  const pageAccessToken = tokenInput || existing.pageAccessToken;
+  if (!pageAccessToken) { toast("Page access token is required.", true); return; }
+  try {
+    await api("/admin/tenants/" + id, { method: "PATCH", body: JSON.stringify({ instagram: { instagramAccountId, pageAccessToken } }) });
+    toast("Instagram connected.");
+    await refreshTenants();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function saveWhatsapp(id) {
+  const phoneNumberId = document.getElementById("wa-phoneid").value.trim();
+  const tokenInput = document.getElementById("wa-token").value.trim();
+  const existing = tenants.find(t => t.id === id).whatsapp || {};
+  if (!phoneNumberId) { toast("Phone number ID is required.", true); return; }
+  const accessToken = tokenInput || existing.accessToken;
+  if (!accessToken) { toast("Access token is required.", true); return; }
+  try {
+    await api("/admin/tenants/" + id, { method: "PATCH", body: JSON.stringify({ whatsapp: { phoneNumberId, accessToken } }) });
+    toast("WhatsApp connected.");
+    await refreshTenants();
+  } catch (e) { toast(e.message, true); }
+}
+
+// --- knowledge ---
+let knowledgeTenantId = null;
+
+function openKnowledgeModal(tenantId) {
+  knowledgeTenantId = tenantId;
+  document.getElementById("kb-source").value = "";
+  document.getElementById("kb-text").value = "";
+  document.getElementById("add-knowledge-modal").classList.add("active");
+}
+
+async function submitKnowledge() {
+  const source = document.getElementById("kb-source").value.trim();
+  const text = document.getElementById("kb-text").value.trim();
+  if (!source || !text) { toast("Both fields are required.", true); return; }
+  try {
+    await api("/admin/tenants/" + knowledgeTenantId + "/knowledge", { method: "POST", body: JSON.stringify({ source, text }) });
+    closeModal("add-knowledge-modal");
+    toast("Added.");
+    loadKnowledge(knowledgeTenantId);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function loadKnowledge(tenantId) {
+  const el = document.getElementById("kb-list");
+  if (!el) return;
+  try {
+    const items = await api("/admin/tenants/" + tenantId + "/knowledge");
+    if (!items.length) { el.innerHTML = '<div class="sub">No documents yet.</div>'; return; }
+    // group by source label for display
+    const bySource = {};
+    items.forEach(i => { (bySource[i.source] = bySource[i.source] || []).push(i); });
+    let html = '<table><thead><tr><th>Source</th><th>Chunks</th><th></th></tr></thead><tbody>';
+    Object.keys(bySource).forEach(source => {
+      const chunks = bySource[source];
+      html += '<tr><td>' + escapeHtml(source) + '</td><td>' + chunks.length + '</td><td class="actions">' +
+        chunks.map(c => '<button onclick="deleteKnowledgeChunk(\'' + tenantId + '\',\'' + c.id + '\')">Delete</button>').join(" ") +
+        '</td></tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<div class="sub">Failed to load: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+async function deleteKnowledgeChunk(tenantId, chunkId) {
+  try {
+    await api("/admin/tenants/" + tenantId + "/knowledge/" + chunkId, { method: "DELETE" });
+    toast("Deleted.");
+    loadKnowledge(tenantId);
+  } catch (e) { toast(e.message, true); }
+}
+
+// --- utils ---
+function escapeHtml(s) {
+  return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+function copyText(elId) {
+  const text = document.getElementById(elId).textContent;
+  navigator.clipboard.writeText(text).then(() => toast("Copied.")).catch(() => toast("Couldn't copy.", true));
+}
+
+// --- init ---
+(function init() {
+  if (loadSession()) {
+    document.getElementById("login-api-base").value = apiBase;
+    document.getElementById("login-key").value = adminKey;
+    api("/admin/tenants").then(() => boot()).catch(() => showLogin());
+  } else {
+    showLogin();
+  }
+})();
+</script>
+</body>
+</html>

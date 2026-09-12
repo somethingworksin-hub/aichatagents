@@ -86,9 +86,18 @@ export async function clearKnowledge(tenantId: string): Promise<void> {
   cache.delete(tenantId);
 }
 
-export async function listKnowledgeSources(tenantId: string): Promise<{ id: string; source: string }[]> {
+export async function deleteKnowledgeChunk(tenantId: string, chunkId: string): Promise<void> {
+  await knowledgeCollection(tenantId).doc(chunkId).delete();
+  cache.delete(tenantId);
+}
+
+export async function listKnowledgeSources(tenantId: string): Promise<{ id: string; source: string; text: string }[]> {
   const snap = await knowledgeCollection(tenantId).get();
-  return snap.docs.map((doc) => ({ id: doc.id, source: (doc.data().source as string) ?? "" }));
+  return snap.docs.map((doc) => ({
+    id: doc.id,
+    source: (doc.data().source as string) ?? "",
+    text: (doc.data().text as string) ?? "",
+  }));
 }
 
 async function loadIndex(tenantId: string): Promise<TenantIndex> {

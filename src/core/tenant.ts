@@ -78,6 +78,11 @@ export async function updateTenant(id: string, patch: Partial<Omit<Tenant, "id">
   return docToTenant(snap);
 }
 
+export async function deleteTenant(id: string): Promise<void> {
+  await db.collection(COLLECTION).doc(id).delete();
+  byIdCache.delete(id);
+}
+
 export async function listTenants(): Promise<Tenant[]> {
   const snap = await db.collection(COLLECTION).get();
   return snap.docs.map(docToTenant);

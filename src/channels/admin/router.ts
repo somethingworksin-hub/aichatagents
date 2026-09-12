@@ -1,8 +1,8 @@
 import { Router } from "express";
 import crypto from "crypto";
 import { config } from "../../config";
-import { createTenant, updateTenant, listTenants, getTenant, Tenant } from "../../core/tenant";
-import { addKnowledgeText, clearKnowledge, listKnowledgeSources } from "../../core/knowledgeBase";
+import { createTenant, updateTenant, listTenants, getTenant, deleteTenant, Tenant } from "../../core/tenant";
+import { addKnowledgeText, clearKnowledge, deleteKnowledgeChunk, listKnowledgeSources } from "../../core/knowledgeBase";
 
 export const adminRouter = Router();
 
@@ -83,6 +83,19 @@ adminRouter.patch("/admin/tenants/:id", async (req, res) => {
   }
 });
 
+adminRouter.delete("/admin/tenants/:id", async (req, res) => {
+  try {
+    const existing = await getTenant(req.params.id);
+    if (!existing) return res.sendStatus(404);
+    await clearKnowledge(req.params.id);
+    await deleteTenant(req.params.id);
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error("[admin] delete tenant failed", err);
+    res.status(500).json({ error: "Failed to delete tenant." });
+  }
+});
+
 // --- Knowledge base management (replaces the old file-based /knowledge/* routes) ---
 
 adminRouter.get("/admin/tenants/:id/knowledge", async (req, res) => {
@@ -115,5 +128,15 @@ adminRouter.delete("/admin/tenants/:id/knowledge", async (req, res) => {
   } catch (err) {
     console.error("[admin] clear knowledge failed", err);
     res.status(500).json({ error: "Failed to clear knowledge." });
+  }
+});
+
+adminRouter.delete("/admin/tenants/:id/knowledge/:chunkId", async (req, res) => {
+  try {
+    await deleteKnowledgeChunk(req.params.id, req.params.chunkId);
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error("[admin] delete knowledge chunk failed", err);
+    res.status(500).json({ error: "Failed to delete knowledge chunk." });
   }
 });

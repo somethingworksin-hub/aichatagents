@@ -47,4 +47,5 @@ app.listen(config.port, () => {
   console.log(`  WhatsApp webhook:    http://localhost:${config.port}/webhook/whatsapp`);
   console.log(`  Gmail auth:          http://localhost:${config.port}/gmail/auth?tenantId=YOUR_TENANT_ID`);
   console.log(`  Admin API:           http://localhost:${config.port}/admin/tenants`);
+  console.log(`  Dashboard:           http://localhost:${config.port}/dashboard.html`);
 });

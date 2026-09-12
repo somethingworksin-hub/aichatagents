@@ -59,9 +59,15 @@ The server starts on `http://localhost:3000`. For webhooks (Facebook/Instagram/W
 1. In the [Firebase Console](https://console.firebase.google.com), open your project → **Build → Firestore Database → Create database**. Any region/mode default is fine (Native mode).
 2. Locally, `gcloud auth application-default login` (above) lets the Admin SDK reach it using your own Google account's permissions. On Cloud Run, no setup is needed — the service's default credentials just work. On Render/other non-GCP hosts, see **Deploying to Render** below.
 
-## 3. Creating a tenant (a client)
+## 3. Dashboard
 
-There's no dashboard UI yet — tenants are created via the admin API. Every request needs an `x-admin-key: <ADMIN_API_KEY>` header.
+Visit `https://your-server.example.com/dashboard.html` — a self-contained admin UI (no build step, no login system of its own) for everything below: create agents (tenants), manage their persona/AI provider/key (BYOK), connect channels, and manage each agent's knowledge base. It authenticates by asking for your `ADMIN_API_KEY` once and storing it in the browser's `localStorage`, then talks directly to the `/admin/*` API described in this README — it's a UI over that API, not a separate system. Since it's just a static file, it works against any deployment (point "API base" at a different server if you're managing a deploy you're not currently browsing).
+
+Everything the dashboard does can also be done via curl against the admin API directly (handy for scripting bulk onboarding) — that's documented below.
+
+## 4. Creating a tenant via the admin API
+
+Tenants can be created via the dashboard above, or directly via the admin API. Every request needs an `x-admin-key: <ADMIN_API_KEY>` header.
 
 ```bash
 curl -X POST http://localhost:3000/admin/tenants \
@@ -100,7 +106,7 @@ curl -X PATCH http://localhost:3000/admin/tenants/TENANT_ID \
 
 See `CLIENT_ONBOARDING.md` for the full checklist of onboarding a client end-to-end.
 
-## 4. Website
+## 5. Website
 
 1. Deploy the server somewhere reachable over HTTPS (or test locally).
 2. Create the tenant with a `website` block (see above) to get a `siteKey`.
@@ -113,7 +119,7 @@ See `CLIENT_ONBOARDING.md` for the full checklist of onboarding a client end-to-
    ```
 4. Try it locally at `http://localhost:3000/demo.html?siteKey=THEIR_SITE_KEY`.
 
-## 5. Facebook Messenger
+## 6. Facebook Messenger
 
 The Meta app itself (`META_VERIFY_TOKEN`/`META_APP_SECRET`) is shared across all tenants and only needs setting up once, ever:
 
@@ -128,7 +134,7 @@ Per tenant, once the Meta app above exists:
 3. `PATCH` the tenant: `{"facebook": {"pageId": "...", "pageAccessToken": "..."}}`.
 4. Send their Page a message on Messenger — it should reply automatically.
 
-## 6. Instagram DMs
+## 7. Instagram DMs
 
 Rides on the same Meta app as Messenger, once a client's Instagram Professional/Business account is linked to their Facebook Page.
 
@@ -137,7 +143,7 @@ Rides on the same Meta app as Messenger, once a client's Instagram Professional/
 3. `PATCH` the tenant: `{"instagram": {"instagramAccountId": "...", "pageAccessToken": "..."}}`.
 4. DM their connected Instagram account to test.
 
-## 7. WhatsApp
+## 8. WhatsApp
 
 The WhatsApp app itself (`WHATSAPP_VERIFY_TOKEN`) is shared; only set up once:
 
@@ -149,7 +155,7 @@ Per tenant:
 2. `PATCH` the tenant: `{"whatsapp": {"phoneNumberId": "...", "accessToken": "..."}}`.
 3. Send a WhatsApp message to their number to see the bot reply.
 
-## 8. Gmail
+## 9. Gmail
 
 Auto-replies to unread mail in an inbox a client authorizes. Uses OAuth2 (a real user grants access) since replying "as" their inbox needs delegated permission. One Google OAuth client (`GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET`) is shared across every tenant.
 
@@ -161,7 +167,7 @@ Auto-replies to unread mail in an inbox a client authorizes. Uses OAuth2 (a real
 
 For production, prefer [Gmail push notifications via Cloud Pub/Sub](https://developers.google.com/gmail/api/guides/push) over polling — the polling approach here is the simplest way to get started without provisioning Pub/Sub.
 
-## 9. Feeding a tenant's knowledge base ("training" it on their data)
+## 10. Feeding a tenant's knowledge base ("training" it on their data)
 
 The bot doesn't get fine-tuned — instead it does retrieval: every incoming message is matched against that tenant's own documents, and the most relevant snippets are handed to the model as context before it replies.
 
