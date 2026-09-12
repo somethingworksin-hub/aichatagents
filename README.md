@@ -171,20 +171,35 @@ For production, prefer [Gmail push notifications via Cloud Pub/Sub](https://deve
 
 The bot doesn't get fine-tuned — instead it does retrieval: every incoming message is matched against that tenant's own documents, and the most relevant snippets are handed to the model as context before it replies.
 
+The dashboard's **Data sources** tab covers all three ways to add content: paste text directly, give it a page URL to fetch and extract, or upload a document (`.txt`, `.md`, `.pdf`, `.docx`, up to 15MB). The same three are available via the admin API directly:
+
 ```bash
-# Add a document (splits into paragraph-sized chunks automatically)
+# Paste text (splits into paragraph-sized chunks automatically)
 curl -X POST http://localhost:3000/admin/tenants/TENANT_ID/knowledge \
   -H "Content-Type: application/json" -H "x-admin-key: $ADMIN_API_KEY" \
   -d '{"source": "Refund Policy", "text": "We offer a full refund within 14 days...\n\nAfter 14 days, refunds are case-by-case..."}'
 
+# Fetch a web page and extract its text
+curl -X POST http://localhost:3000/admin/tenants/TENANT_ID/knowledge/from-url \
+  -H "Content-Type: application/json" -H "x-admin-key: $ADMIN_API_KEY" \
+  -d '{"url": "https://example.com/faq"}'
+
+# Upload a document (.txt/.md/.pdf/.docx)
+curl -X POST http://localhost:3000/admin/tenants/TENANT_ID/knowledge/upload \
+  -H "x-admin-key: $ADMIN_API_KEY" \
+  -F "file=@./refund-policy.pdf"
+
 # See what's loaded
 curl http://localhost:3000/admin/tenants/TENANT_ID/knowledge -H "x-admin-key: $ADMIN_API_KEY"
 
-# Clear everything for this tenant (e.g. before re-uploading a revised doc set)
+# Delete one document's chunks (grab its id(s) from the list above)
+curl -X DELETE http://localhost:3000/admin/tenants/TENANT_ID/knowledge/CHUNK_ID -H "x-admin-key: $ADMIN_API_KEY"
+
+# Or clear everything for this tenant (e.g. before re-uploading a revised doc set)
 curl -X DELETE http://localhost:3000/admin/tenants/TENANT_ID/knowledge -H "x-admin-key: $ADMIN_API_KEY"
 ```
 
-Separate distinct facts/topics in `text` with a blank line — retrieval works paragraph by paragraph, so one idea per paragraph gives better results than one giant wall of text. This works the same across every channel since they all share `generateReply()`. Retrieval is a lightweight TF-IDF match (`src/core/knowledgeBase.ts`) — enough for FAQs/docs in the tens-to-low-hundreds of pages per tenant. If a tenant outgrows that, swap in a real vector store behind the same `retrieveContext()` function.
+Separate distinct facts/topics in pasted `text` with a blank line — retrieval works paragraph by paragraph, so one idea per paragraph gives better results than one giant wall of text. URL fetching does basic HTML tag-stripping (works well on plain content/FAQ pages; won't see content that only renders via JavaScript). This works the same across every channel since they all share `generateReply()`. Retrieval is a lightweight TF-IDF match (`src/core/knowledgeBase.ts`) — enough for FAQs/docs in the tens-to-low-hundreds of pages per tenant. If a tenant outgrows that, swap in a real vector store behind the same `retrieveContext()` function.
 
 ## Customizing a tenant's bot
 

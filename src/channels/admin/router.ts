@@ -1,10 +1,14 @@
 import { Router } from "express";
+import multer from "multer";
 import crypto from "crypto";
 import { config } from "../../config";
 import { createTenant, updateTenant, listTenants, getTenant, deleteTenant, Tenant } from "../../core/tenant";
 import { addKnowledgeText, clearKnowledge, deleteKnowledgeChunk, listKnowledgeSources } from "../../core/knowledgeBase";
+import { extractTextFromUrl, extractTextFromFile } from "../../core/documentExtract";
 
 export const adminRouter = Router();
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
 /**
  * Minimal secret-protected REST API for managing tenants until a real
@@ -128,6 +132,39 @@ adminRouter.delete("/admin/tenants/:id/knowledge", async (req, res) => {
   } catch (err) {
     console.error("[admin] clear knowledge failed", err);
     res.status(500).json({ error: "Failed to clear knowledge." });
+  }
+});
+
+adminRouter.post("/admin/tenants/:id/knowledge/from-url", async (req, res) => {
+  try {
+    const { url } = req.body ?? {};
+    if (!url || typeof url !== "string") {
+      return res.status(400).json({ error: "Required: url" });
+    }
+    const text = await extractTextFromUrl(url);
+    const chunks = await addKnowledgeText(req.params.id, url, text);
+    res.status(201).json({ added: chunks, source: url });
+  } catch (err: any) {
+    console.error("[admin] add knowledge from URL failed", err);
+    res.status(400).json({ error: err?.message || "Failed to read that URL." });
+  }
+});
+
+adminRouter.post("/admin/tenants/:id/knowledge/upload", upload.single("file"), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: "Required: file (multipart form field named 'file')" });
+    }
+    const text = await extractTextFromFile(file.buffer, file.originalname);
+    if (!text.trim()) {
+      return res.status(400).json({ error: "Couldn't extract any text from that file." });
+    }
+    const chunks = await addKnowledgeText(req.params.id, file.originalname, text);
+    res.status(201).json({ added: chunks, source: file.originalname });
+  } catch (err: any) {
+    console.error("[admin] add knowledge from upload failed", err);
+    res.status(400).json({ error: err?.message || "Failed to process that file." });
   }
 });
 

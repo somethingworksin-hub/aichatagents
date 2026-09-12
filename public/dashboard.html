@@ -241,13 +241,41 @@
 <div class="modal-backdrop" id="add-knowledge-modal">
   <div class="modal">
     <h2>Add knowledge</h2>
-    <label>Source label</label>
-    <input id="kb-source" placeholder="Refund Policy" />
-    <label>Text (blank line between distinct facts/topics)</label>
-    <textarea id="kb-text" style="min-height:160px" placeholder="We offer a full refund within 14 days...&#10;&#10;After 14 days, refunds are case-by-case..."></textarea>
-    <div class="modal-actions">
-      <button onclick="closeModal('add-knowledge-modal')">Cancel</button>
-      <button class="primary" onclick="submitKnowledge()">Add</button>
+    <div class="tabs" id="kb-tabs">
+      <button class="tab-btn active" data-kbtab="text" onclick="switchKbTab(this,'text')">Paste text</button>
+      <button class="tab-btn" data-kbtab="url" onclick="switchKbTab(this,'url')">From website</button>
+      <button class="tab-btn" data-kbtab="file" onclick="switchKbTab(this,'file')">Upload document</button>
+    </div>
+
+    <div class="tab-panel active" data-kbpanel="text">
+      <label>Source label</label>
+      <input id="kb-source" placeholder="Refund Policy" />
+      <label>Text (blank line between distinct facts/topics)</label>
+      <textarea id="kb-text" style="min-height:160px" placeholder="We offer a full refund within 14 days...&#10;&#10;After 14 days, refunds are case-by-case..."></textarea>
+      <div class="modal-actions">
+        <button onclick="closeModal('add-knowledge-modal')">Cancel</button>
+        <button class="primary" onclick="submitKnowledge()">Add</button>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-kbpanel="url">
+      <label>Page URL</label>
+      <input id="kb-url" placeholder="https://example.com/faq" />
+      <div class="sub" style="margin-top:6px;">Fetches the page and extracts its readable text. Works best on plain content pages (FAQs, docs, policies) — not JavaScript-rendered single-page apps.</div>
+      <div class="modal-actions">
+        <button onclick="closeModal('add-knowledge-modal')">Cancel</button>
+        <button class="primary" onclick="submitKnowledgeUrl(this)">Fetch &amp; add</button>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-kbpanel="file">
+      <label>Document</label>
+      <input id="kb-file" type="file" accept=".txt,.md,.pdf,.docx" />
+      <div class="sub" style="margin-top:6px;">Supported: .txt, .md, .pdf, .docx — up to 15MB.</div>
+      <div class="modal-actions">
+        <button onclick="closeModal('add-knowledge-modal')">Cancel</button>
+        <button class="primary" onclick="submitKnowledgeFile(this)">Upload &amp; add</button>
+      </div>
     </div>
   </div>
 </div>
@@ -644,7 +672,28 @@ function openKnowledgeModal(tenantId) {
   knowledgeTenantId = tenantId;
   document.getElementById("kb-source").value = "";
   document.getElementById("kb-text").value = "";
-  document.getElementById("add-knowledge-modal").classList.add("active");
+  document.getElementById("kb-url").value = "";
+  document.getElementById("kb-file").value = "";
+  const modal = document.getElementById("add-knowledge-modal");
+  modal.querySelectorAll(".tab-btn").forEach((b, i) => b.classList.toggle("active", i === 0));
+  modal.querySelectorAll(".tab-panel").forEach((p, i) => p.classList.toggle("active", i === 0));
+  modal.classList.add("active");
+}
+
+function switchKbTab(btn, name) {
+  const modal = btn.closest(".modal");
+  modal.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  modal.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+  modal.querySelector('.tab-panel[data-kbpanel="' + name + '"]').classList.add("active");
+}
+
+async function withButtonBusy(btn, label, fn) {
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = label;
+  try { await fn(); }
+  finally { btn.disabled = false; btn.textContent = original; }
 }
 
 async function submitKnowledge() {
@@ -659,6 +708,41 @@ async function submitKnowledge() {
   } catch (e) { toast(e.message, true); }
 }
 
+async function submitKnowledgeUrl(btn) {
+  const url = document.getElementById("kb-url").value.trim();
+  if (!url) { toast("Enter a URL.", true); return; }
+  await withButtonBusy(btn, "Fetching…", async () => {
+    try {
+      const result = await api("/admin/tenants/" + knowledgeTenantId + "/knowledge/from-url", { method: "POST", body: JSON.stringify({ url }) });
+      closeModal("add-knowledge-modal");
+      toast("Added " + result.added + " chunk(s) from that page.");
+      loadKnowledge(knowledgeTenantId);
+    } catch (e) { toast(e.message, true); }
+  });
+}
+
+async function submitKnowledgeFile(btn) {
+  const fileInput = document.getElementById("kb-file");
+  const file = fileInput.files[0];
+  if (!file) { toast("Choose a file.", true); return; }
+  await withButtonBusy(btn, "Uploading…", async () => {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(apiBase + "/admin/tenants/" + knowledgeTenantId + "/knowledge/upload", {
+        method: "POST",
+        headers: { "x-admin-key": adminKey }, // no Content-Type — browser sets the multipart boundary itself
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || ("Upload failed (" + res.status + ")"));
+      closeModal("add-knowledge-modal");
+      toast("Added " + data.added + " chunk(s) from " + file.name + ".");
+      loadKnowledge(knowledgeTenantId);
+    } catch (e) { toast(e.message, true); }
+  });
+}
+
 async function loadKnowledge(tenantId) {
   const el = document.getElementById("kb-list");
   if (!el) return;
@@ -671,8 +755,14 @@ async function loadKnowledge(tenantId) {
     let html = '<table><thead><tr><th>Source</th><th>Chunks</th><th></th></tr></thead><tbody>';
     Object.keys(bySource).forEach(source => {
       const chunks = bySource[source];
-      html += '<tr><td>' + escapeHtml(source) + '</td><td>' + chunks.length + '</td><td class="actions">' +
-        chunks.map(c => '<button onclick="deleteKnowledgeChunk(\'' + tenantId + '\',\'' + c.id + '\')">Delete</button>').join(" ") +
+      const isUrl = /^https?:\/\//i.test(source);
+      const label = isUrl
+        ? '<a href="' + escapeAttr(source) + '" target="_blank" title="' + escapeAttr(source) + '">' + escapeHtml(truncate(source, 60)) + '</a>'
+        + '<span class="badge">website</span>'
+        : escapeHtml(source);
+      const ids = chunks.map(c => c.id).join(",");
+      html += '<tr><td>' + label + '</td><td>' + chunks.length + '</td><td class="actions">' +
+        '<button onclick="deleteKnowledgeSource(\'' + tenantId + '\',\'' + ids + '\')">Delete</button>' +
         '</td></tr>';
     });
     html += '</tbody></table>';
@@ -682,15 +772,18 @@ async function loadKnowledge(tenantId) {
   }
 }
 
-async function deleteKnowledgeChunk(tenantId, chunkId) {
+async function deleteKnowledgeSource(tenantId, idsCsv) {
+  if (!confirm("Delete this document from the knowledge base?")) return;
+  const ids = idsCsv.split(",");
   try {
-    await api("/admin/tenants/" + tenantId + "/knowledge/" + chunkId, { method: "DELETE" });
+    await Promise.all(ids.map(id => api("/admin/tenants/" + tenantId + "/knowledge/" + id, { method: "DELETE" })));
     toast("Deleted.");
     loadKnowledge(tenantId);
   } catch (e) { toast(e.message, true); }
 }
 
 // --- utils ---
+function truncate(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
 function escapeHtml(s) {
   return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
