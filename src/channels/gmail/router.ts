@@ -13,11 +13,16 @@ gmailRouter.get("/gmail/auth", async (req, res) => {
   if (!tenantId) {
     return res.status(400).send("Missing ?tenantId= — which tenant is this Gmail account being connected for?");
   }
-  const tenant = await getTenant(tenantId);
-  if (!tenant) {
-    return res.status(404).send(`No tenant found with id ${tenantId}.`);
+  try {
+    const tenant = await getTenant(tenantId);
+    if (!tenant) {
+      return res.status(404).send(`No tenant found with id ${tenantId}.`);
+    }
+    res.redirect(getAuthUrl(tenantId));
+  } catch (err) {
+    console.error("[gmail] /gmail/auth failed", err);
+    res.status(500).send("Something went wrong looking up that tenant. Check server logs.");
   }
-  res.redirect(getAuthUrl(tenantId));
 });
 
 gmailRouter.get("/gmail/oauth2callback", async (req, res) => {

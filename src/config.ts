@@ -22,6 +22,10 @@ export const config = {
     verifyToken: required("META_VERIFY_TOKEN"),
     appSecret: required("META_APP_SECRET"),
     graphApiVersion: required("META_GRAPH_API_VERSION", "v21.0"),
+    // Needed for the "Connect Facebook/Instagram" OAuth button (Facebook Login),
+    // in addition to appSecret above. Not needed if you only ever paste
+    // Page IDs/tokens in manually.
+    appId: required("META_APP_ID"),
   },
 
   whatsapp: {

@@ -8,8 +8,26 @@ import { instagramRouter } from "./channels/instagram/router";
 import { whatsappRouter } from "./channels/whatsapp/router";
 import { gmailRouter } from "./channels/gmail/router";
 import { adminRouter } from "./channels/admin/router";
+import { connectRouter } from "./channels/meta/connectRouter";
+
+// Multi-tenant, multi-request-in-flight server: a single unhandled async
+// error (e.g. a route handler missing a try/catch around an await) must
+// never crash the whole process and take down every tenant/channel at
+// once. Log and keep serving — this is a safety net, not a substitute for
+// fixing the underlying handler.
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException]", err);
+});
 
 const app = express();
+
+// Behind Firebase Hosting / Cloud Run's proxy, req.protocol otherwise
+// reports "http" even for HTTPS requests — needed so the Facebook OAuth
+// redirect_uri we build matches what's registered in the Meta App.
+app.set("trust proxy", true);
 
 // Capture the raw body so Meta webhook signature verification can hash the
 // exact bytes that were sent (JSON.stringify(req.body) is not guaranteed to
@@ -38,6 +56,7 @@ app.use(instagramRouter);
 app.use(whatsappRouter);
 app.use(gmailRouter);
 app.use(adminRouter);
+app.use(connectRouter);
 
 app.listen(config.port, () => {
   console.log(`AI chat agents server listening on port ${config.port}`);

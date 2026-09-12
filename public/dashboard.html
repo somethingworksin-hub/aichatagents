@@ -503,6 +503,7 @@ async function renderDetail(id) {
 
       <div class="tab-panel" data-panel="channels">
         ${renderWebsiteSection(tenant, origin)}
+        ${renderFacebookConnectSection(tenant, origin)}
         ${renderFacebookSection(tenant)}
         ${renderInstagramSection(tenant)}
         ${renderWhatsappSection(tenant)}
@@ -561,16 +562,31 @@ function renderWebsiteSection(tenant, origin) {
   </div>`;
 }
 
+function renderFacebookConnectSection(tenant, origin) {
+  const connectUrl = origin + "/connect/facebook?tenantId=" + tenant.id;
+  const bothConnected = tenant.facebook && tenant.instagram;
+  return `<div style="margin-bottom:24px;">
+    <h2 style="font-size:14px;">Facebook &amp; Instagram</h2>
+    <div class="sub">One login connects both — the authorizing user needs to be an admin of the Facebook Page (and its linked Instagram account, if any). Requires the shared Meta app already set up on the server (see README §5), and — for anyone other than the app's own admins/testers — Meta App Review approval for messaging permissions.</div>
+    <a href="${connectUrl}" target="_blank"><button class="primary">${bothConnected ? "Reconnect via Facebook" : "Connect via Facebook"}</button></a>
+  </div>`;
+}
+
 function renderFacebookSection(tenant) {
   const fb = tenant.facebook || {};
   return `<div style="margin-bottom:24px;">
     <h2 style="font-size:14px;">Facebook Messenger ${tenant.facebook ? '<span class="badge on">connected</span>' : '<span class="badge">not connected</span>'}</h2>
-    <div class="sub">Requires the shared Meta app already set up on the server (see README §5).</div>
-    <label>Page ID</label>
-    <input id="fb-pageid" value="${escapeAttr(fb.pageId || "")}" />
-    <label>Page access token</label>
-    <input id="fb-token" type="password" placeholder="${fb.pageAccessToken ? maskSecret(fb.pageAccessToken) : 'EAAxxxxx'}" />
-    <div style="margin-top:10px;"><button class="primary" onclick="saveFacebook('${tenant.id}')">Save</button></div>
+    ${tenant.facebook ? `<div class="sub">Page ID: <code>${escapeHtml(fb.pageId)}</code></div>` : ""}
+    <details>
+      <summary style="cursor:pointer;color:var(--text-dim);font-size:12px;margin-top:6px;">Connect manually instead (paste Page ID/token)</summary>
+      <div style="margin-top:10px;">
+        <label>Page ID</label>
+        <input id="fb-pageid" value="${escapeAttr(fb.pageId || "")}" />
+        <label>Page access token</label>
+        <input id="fb-token" type="password" placeholder="${fb.pageAccessToken ? maskSecret(fb.pageAccessToken) : 'EAAxxxxx'}" />
+        <div style="margin-top:10px;"><button class="primary" onclick="saveFacebook('${tenant.id}')">Save</button></div>
+      </div>
+    </details>
   </div>`;
 }
 
@@ -578,12 +594,17 @@ function renderInstagramSection(tenant) {
   const ig = tenant.instagram || {};
   return `<div style="margin-bottom:24px;">
     <h2 style="font-size:14px;">Instagram DMs ${tenant.instagram ? '<span class="badge on">connected</span>' : '<span class="badge">not connected</span>'}</h2>
-    <div class="sub">Rides on the same Meta app as Messenger (see README §6).</div>
-    <label>Instagram-scoped account ID</label>
-    <input id="ig-accountid" value="${escapeAttr(ig.instagramAccountId || "")}" />
-    <label>Page access token</label>
-    <input id="ig-token" type="password" placeholder="${ig.pageAccessToken ? maskSecret(ig.pageAccessToken) : 'EAAxxxxx'}" />
-    <div style="margin-top:10px;"><button class="primary" onclick="saveInstagram('${tenant.id}')">Save</button></div>
+    ${tenant.instagram ? `<div class="sub">Account ID: <code>${escapeHtml(ig.instagramAccountId)}</code></div>` : ""}
+    <details>
+      <summary style="cursor:pointer;color:var(--text-dim);font-size:12px;margin-top:6px;">Connect manually instead (paste account ID/token)</summary>
+      <div style="margin-top:10px;">
+        <label>Instagram-scoped account ID</label>
+        <input id="ig-accountid" value="${escapeAttr(ig.instagramAccountId || "")}" />
+        <label>Page access token</label>
+        <input id="ig-token" type="password" placeholder="${ig.pageAccessToken ? maskSecret(ig.pageAccessToken) : 'EAAxxxxx'}" />
+        <div style="margin-top:10px;"><button class="primary" onclick="saveInstagram('${tenant.id}')">Save</button></div>
+      </div>
+    </details>
   </div>`;
 }
 

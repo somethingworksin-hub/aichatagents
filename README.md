@@ -119,31 +119,31 @@ See `CLIENT_ONBOARDING.md` for the full checklist of onboarding a client end-to-
    ```
 4. Try it locally at `http://localhost:3000/demo.html?siteKey=THEIR_SITE_KEY`.
 
-## 6. Facebook Messenger
+## 6. Facebook Messenger & Instagram DMs
 
-The Meta app itself (`META_VERIFY_TOKEN`/`META_APP_SECRET`) is shared across all tenants and only needs setting up once, ever:
+One Meta app, and one login flow, covers both — the Meta app itself (`META_VERIFY_TOKEN`/`META_APP_SECRET`/`META_APP_ID`) is shared across all tenants and only needs setting up once, ever:
 
-1. Create a Meta App at https://developers.facebook.com/apps (type: **Business**), add the **Messenger** product.
-2. Copy the App Secret (App Settings → Basic) into `META_APP_SECRET`. Pick any random string for `META_VERIFY_TOKEN`.
+1. Create a Meta App at https://developers.facebook.com/apps (type: **Business**). Add the **Messenger** product and the **Instagram** product.
+2. Copy the App Secret (App Settings → Basic) into `META_APP_SECRET`, and the App ID into `META_APP_ID`. Pick any random string for `META_VERIFY_TOKEN`.
 3. Under Messenger → Settings → Webhooks, **Add Callback URL**: `https://your-server.example.com/webhook/facebook`, Verify Token = `META_VERIFY_TOKEN`. Subscribe to the `messages` field.
+4. Under Webhooks, also subscribe the **Instagram** object to `messages` with Callback URL `https://your-server.example.com/webhook/instagram`, same Verify Token.
+5. Add the **Facebook Login** product (used for the "Connect via Facebook" button below). Under its Settings, add `https://your-server.example.com/connect/facebook/callback` as a **Valid OAuth Redirect URI**.
+6. Under App Roles, add yourself and anyone else onboarding clients as **Admins/Developers/Testers** — this lets you use the connect flow immediately, on your own or your clients' Pages, without waiting on Meta's review.
+7. To use `pages_messaging`/`instagram_manage_messages` for people who *aren't* app admins/testers (i.e. real external clients), submit those permissions for **App Review** in Meta's dashboard. This is Meta's standard requirement for any app sending messages on behalf of a business — budget a few days to a couple of weeks depending on how quickly you can supply their required screencast/use-case docs. Testing works immediately either way.
 
-Per tenant, once the Meta app above exists:
+Per tenant, once the Meta app above exists — in the dashboard, open the agent → **Channels** tab → **"Connect via Facebook"**. This sends the client (or you, on their behalf) through Facebook's login/consent screen; approving it automatically saves the Page ID + access token (and the linked Instagram account, if any) onto the tenant. No manual copy-pasting of tokens needed. If they manage more than one Page, you'll be shown a picker.
 
-1. Under Messenger → Settings, generate a **Page Access Token** for that client's Facebook Page, and subscribe their Page to the app.
-2. Note the **Page ID** (found in their Page's About/Settings).
-3. `PATCH` the tenant: `{"facebook": {"pageId": "...", "pageAccessToken": "..."}}`.
-4. Send their Page a message on Messenger — it should reply automatically.
+Prefer to wire it up by hand instead (or the app isn't approved for a given client yet)? Each section also has a "Connect manually instead" fallback — same fields as the admin API:
+```bash
+curl -X PATCH http://localhost:3000/admin/tenants/TENANT_ID \
+  -H "Content-Type: application/json" -H "x-admin-key: $ADMIN_API_KEY" \
+  -d '{"facebook": {"pageId": "...", "pageAccessToken": "..."}, "instagram": {"instagramAccountId": "...", "pageAccessToken": "..."}}'
+```
+(Page Access Token and Page ID come from Messenger → Settings in the Meta App dashboard; the Instagram-scoped account ID is what shows up as `entry.id` in webhook payloads, also visible via the Graph API Explorer.)
 
-## 7. Instagram DMs
+Test by messaging the connected Page on Messenger, or DMing the connected Instagram account.
 
-Rides on the same Meta app as Messenger, once a client's Instagram Professional/Business account is linked to their Facebook Page.
-
-1. (Once) In your Meta App, add the **Instagram** product; under Webhooks subscribe the **Instagram** object to `messages` with Callback URL `https://your-server.example.com/webhook/instagram`, Verify Token = `META_VERIFY_TOKEN`.
-2. Per tenant: connect their Page's linked IG account in the Meta App, note the **Instagram-scoped account ID** (this is what shows up as `entry.id` in webhook payloads — Meta's docs/Graph API Explorer can also surface it), and reuse their Page Access Token.
-3. `PATCH` the tenant: `{"instagram": {"instagramAccountId": "...", "pageAccessToken": "..."}}`.
-4. DM their connected Instagram account to test.
-
-## 8. WhatsApp
+## 7. WhatsApp
 
 The WhatsApp app itself (`WHATSAPP_VERIFY_TOKEN`) is shared; only set up once:
 
@@ -155,7 +155,7 @@ Per tenant:
 2. `PATCH` the tenant: `{"whatsapp": {"phoneNumberId": "...", "accessToken": "..."}}`.
 3. Send a WhatsApp message to their number to see the bot reply.
 
-## 9. Gmail
+## 8. Gmail
 
 Auto-replies to unread mail in an inbox a client authorizes. Uses OAuth2 (a real user grants access) since replying "as" their inbox needs delegated permission. One Google OAuth client (`GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET`) is shared across every tenant.
 
@@ -167,7 +167,7 @@ Auto-replies to unread mail in an inbox a client authorizes. Uses OAuth2 (a real
 
 For production, prefer [Gmail push notifications via Cloud Pub/Sub](https://developers.google.com/gmail/api/guides/push) over polling — the polling approach here is the simplest way to get started without provisioning Pub/Sub.
 
-## 10. Feeding a tenant's knowledge base ("training" it on their data)
+## 9. Feeding a tenant's knowledge base ("training" it on their data)
 
 The bot doesn't get fine-tuned — instead it does retrieval: every incoming message is matched against that tenant's own documents, and the most relevant snippets are handed to the model as context before it replies.
 

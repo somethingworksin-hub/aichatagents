@@ -51,6 +51,18 @@ export interface Tenant {
     // (access_token, refresh_token, expiry_date, etc.) — stored as-is.
     tokens?: Record<string, any>;
   };
+
+  // Transient: set right after a "Connect Facebook" OAuth flow when the
+  // authorizing user manages more than one Page, so they can be shown a
+  // picker (see src/channels/meta/connectRouter.ts). Cleared once a page
+  // is selected.
+  pendingFacebookPages?: {
+    id: string;
+    name: string;
+    accessToken: string;
+    instagramAccountId?: string;
+    instagramUsername?: string;
+  }[];
 }
 
 const COLLECTION = "tenants";
