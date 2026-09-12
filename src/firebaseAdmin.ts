@@ -21,4 +21,9 @@ if (!admin.apps.length) {
 }
 
 export const db = admin.firestore();
+// Admin API payloads routinely include optional fields as `undefined`
+// (e.g. website.allowedOrigins when it wasn't provided) — Firestore
+// rejects those by default, so drop them instead of requiring every
+// caller to strip undefined keys themselves.
+db.settings({ ignoreUndefinedProperties: true });
 export const FieldValue = admin.firestore.FieldValue;
