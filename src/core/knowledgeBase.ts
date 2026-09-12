@@ -1,8 +1,8 @@
 import { db } from "../firebaseAdmin";
 
-const MAX_CHUNK_CHARS = 800;
-const TOP_K = 4;
-const MIN_SCORE = 0.05;
+const MAX_CHUNK_CHARS = 1400;
+const TOP_K = 8;
+const MIN_SCORE = 0.02;
 const CACHE_TTL_MS = 60_000;
 
 const STOPWORDS = new Set(
@@ -140,6 +140,23 @@ function scoreChunk(queryTerms: string[], chunk: IndexedChunk, idf: Map<string, 
   return score;
 }
 
+async function getMatchedChunks(
+  tenantId: string,
+  message: string
+): Promise<{ source: string; text: string; score: number }[]> {
+  const { chunks, idf } = await loadIndex(tenantId);
+  if (chunks.length === 0) return [];
+
+  const queryTerms = tokenize(message);
+  if (queryTerms.length === 0) return [];
+
+  return chunks
+    .map((chunk) => ({ source: chunk.source, text: chunk.text, score: scoreChunk(queryTerms, chunk, idf) }))
+    .filter((s) => s.score >= MIN_SCORE)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, TOP_K);
+}
+
 /**
  * Returns up to TOP_K relevant chunks of this tenant's knowledge base for
  * the given message, formatted for inclusion in the system prompt. Empty
@@ -148,24 +165,30 @@ function scoreChunk(queryTerms: string[], chunk: IndexedChunk, idf: Map<string, 
  * per-tenant index refreshed from Firestore every CACHE_TTL_MS.
  */
 export async function retrieveContext(tenantId: string, message: string): Promise<string> {
-  const { chunks, idf } = await loadIndex(tenantId);
-  if (chunks.length === 0) return "";
-
-  const queryTerms = tokenize(message);
-  if (queryTerms.length === 0) return "";
-
-  const scored = chunks
-    .map((chunk) => ({ chunk, score: scoreChunk(queryTerms, chunk, idf) }))
-    .filter((s) => s.score >= MIN_SCORE)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, TOP_K);
-
+  const scored = await getMatchedChunks(tenantId, message);
   if (scored.length === 0) return "";
 
-  const blocks = scored.map((s, i) => `[${i + 1}] (from ${s.chunk.source})\n${s.chunk.text}`).join("\n\n");
+  const blocks = scored.map((s, i) => `[${i + 1}] (from ${s.source})\n${s.text}`).join("\n\n");
 
   return [
-    "Reference information from our knowledge base (use it to answer if relevant; ignore it if it isn't):",
+    "Reference information from our knowledge base. Multiple items may be relevant to one question — " +
+      "use all of them together and give a complete, specific answer (exact numbers, names, steps, limits, etc. " +
+      "rather than vague summaries). If the answer isn't fully covered here, say what you do know from this " +
+      "reference material and be explicit about what's missing, rather than declining to answer at all.",
     blocks,
   ].join("\n\n");
+}
+
+/**
+ * For the dashboard's retrieval-preview tool: shows exactly which chunks
+ * (and their scores) would be handed to the model for a given question, so
+ * "the bot doesn't know X" can be diagnosed as a retrieval miss (wrong/no
+ * chunks matched — reword the source doc or the question) vs. a generation
+ * issue (right chunks matched, but the reply didn't use them well).
+ */
+export async function previewRetrieval(
+  tenantId: string,
+  message: string
+): Promise<{ source: string; text: string; score: number }[]> {
+  return getMatchedChunks(tenantId, message);
 }

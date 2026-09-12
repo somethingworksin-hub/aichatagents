@@ -3,7 +3,13 @@ import multer from "multer";
 import crypto from "crypto";
 import { config } from "../../config";
 import { createTenant, updateTenant, listTenants, getTenant, deleteTenant, Tenant } from "../../core/tenant";
-import { addKnowledgeText, clearKnowledge, deleteKnowledgeChunk, listKnowledgeSources } from "../../core/knowledgeBase";
+import {
+  addKnowledgeText,
+  clearKnowledge,
+  deleteKnowledgeChunk,
+  listKnowledgeSources,
+  previewRetrieval,
+} from "../../core/knowledgeBase";
 import { extractTextFromUrl, extractTextFromFile } from "../../core/documentExtract";
 
 export const adminRouter = Router();
@@ -132,6 +138,20 @@ adminRouter.delete("/admin/tenants/:id/knowledge", async (req, res) => {
   } catch (err) {
     console.error("[admin] clear knowledge failed", err);
     res.status(500).json({ error: "Failed to clear knowledge." });
+  }
+});
+
+adminRouter.post("/admin/tenants/:id/knowledge/preview", async (req, res) => {
+  try {
+    const { message } = req.body ?? {};
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({ error: "Required: message (a sample question to test retrieval against)." });
+    }
+    const matches = await previewRetrieval(req.params.id, message);
+    res.json({ matches });
+  } catch (err) {
+    console.error("[admin] preview retrieval failed", err);
+    res.status(500).json({ error: "Failed to preview retrieval." });
   }
 });
 

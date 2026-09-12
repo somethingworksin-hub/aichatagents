@@ -515,6 +515,16 @@ async function renderDetail(id) {
           <button class="primary" onclick="openKnowledgeModal('${tenant.id}')">+ Add</button>
         </div>
         <div id="kb-list">Loading…</div>
+
+        <div style="margin-top:24px; padding-top:18px; border-top:1px solid var(--border);">
+          <h2 style="font-size:14px;">Test retrieval</h2>
+          <div class="sub">See exactly which chunks a question would pull in, before testing on the live widget/channel. Useful for diagnosing "it doesn't know X" — no match means retrieval missed it (reword the source doc or add more detail); a match with a low score may still lose out to better-matching chunks.</div>
+          <div class="row">
+            <input id="kb-preview-q" placeholder="What a customer might ask…" onkeydown="if(event.key==='Enter') previewRetrieval('${tenant.id}')" />
+            <button style="flex:0 0 auto;" onclick="previewRetrieval('${tenant.id}')">Preview</button>
+          </div>
+          <div id="kb-preview-results" style="margin-top:10px;"></div>
+        </div>
       </div>
     </div>
   `;
@@ -769,6 +779,25 @@ async function loadKnowledge(tenantId) {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<div class="sub">Failed to load: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+async function previewRetrieval(tenantId) {
+  const q = document.getElementById("kb-preview-q").value.trim();
+  const el = document.getElementById("kb-preview-results");
+  if (!q) { toast("Type a question first.", true); return; }
+  el.innerHTML = '<div class="sub">Searching…</div>';
+  try {
+    const { matches } = await api("/admin/tenants/" + tenantId + "/knowledge/preview", { method: "POST", body: JSON.stringify({ message: q }) });
+    if (!matches.length) {
+      el.innerHTML = '<div class="sub">No chunks matched. The bot would answer this from persona/general knowledge only, or say it doesn\'t know.</div>';
+      return;
+    }
+    el.innerHTML = matches.map((m, i) =>
+      '<div class="kv" style="margin-bottom:8px;"><strong>#' + (i + 1) + ' · ' + escapeHtml(m.source) + '</strong> <span class="sub" style="display:inline;">score ' + m.score.toFixed(2) + '</span><br/>' + escapeHtml(m.text) + '</div>'
+    ).join("");
+  } catch (e) {
+    el.innerHTML = '<div class="sub">' + escapeHtml(e.message) + '</div>';
   }
 }
 

@@ -45,7 +45,7 @@ export async function callLLM(
     const openai = getOpenAI(llm.apiKey);
     const completion = await openai.chat.completions.create({
       model: llm.model,
-      max_tokens: 1024,
+      max_tokens: 2048,
       messages: [
         { role: "system", content: system },
         ...history.map((m) => ({ role: m.role, content: m.content })),
@@ -59,7 +59,7 @@ export async function callLLM(
   const anthropic = getAnthropic(llm.apiKey);
   const response = await anthropic.messages.create({
     model: llm.model,
-    max_tokens: 1024,
+    max_tokens: 2048,
     system,
     messages: [
       ...history.map((m) => ({ role: m.role, content: m.content })),
