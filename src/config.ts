@@ -63,5 +63,9 @@ export const config = {
       .filter(Boolean),
     pollIntervalMs: Number(process.env.GMAIL_POLL_INTERVAL_MS || 60000),
     labelToWatch: required("GMAIL_LABEL_TO_WATCH", "INBOX"),
+    // Shared secret for POST /gmail/poll, so Cloud Scheduler (or any external
+    // cron) can trigger a poll on a serverless host without leaving a
+    // long-running process around. Leave blank to disable that endpoint.
+    cronSecret: required("GMAIL_CRON_SECRET"),
   },
 };

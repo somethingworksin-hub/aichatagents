@@ -1,5 +1,7 @@
 import { Router } from "express";
+import { config } from "../../config";
 import { getAuthUrl, exchangeCodeForToken } from "./oauth";
+import { processUnreadMessages } from "./service";
 
 export const gmailRouter = Router();
 
@@ -20,5 +22,30 @@ gmailRouter.get("/gmail/oauth2callback", async (req, res) => {
   } catch (err) {
     console.error("[gmail] oauth exchange failed", err);
     res.status(500).send("Failed to complete Gmail authorization. Check server logs.");
+  }
+});
+
+/**
+ * Trigger one poll cycle over HTTP, for hosts where a long-running
+ * `npm run gmail:poll` process isn't practical (e.g. Cloud Run, which scales
+ * services to zero when idle). Point a Cloud Scheduler job (or any cron) at
+ * this URL every few minutes, with the shared secret as a query param or
+ * `x-cron-secret` header.
+ */
+gmailRouter.post("/gmail/poll", async (req, res) => {
+  if (!config.gmail.cronSecret) {
+    return res.status(503).json({ error: "GMAIL_CRON_SECRET is not configured on this server." });
+  }
+  const provided = (req.header("x-cron-secret") || req.query.secret) as string | undefined;
+  if (provided !== config.gmail.cronSecret) {
+    return res.sendStatus(403);
+  }
+
+  try {
+    await processUnreadMessages();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[gmail] /gmail/poll failed", err);
+    res.status(500).json({ error: "Poll failed. Check server logs." });
   }
 });

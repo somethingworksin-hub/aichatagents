@@ -137,7 +137,72 @@ This works the same across every channel (website, Facebook, Instagram, WhatsApp
 - Per-channel tweaks (e.g. shorter replies on SMS-like channels) live in `channelNotes` inside `src/core/chatbot.ts`.
 - To hand off to a human, have the model include a marker phrase in its reply and check for it in each channel's router before sending — the hook points are already there (`generateReply` return value in each router).
 
-## Deploying to Render
+## Deploying to Firebase (Cloud Run + Hosting)
+
+This is a stateful Express server (webhooks, OAuth callbacks), so it runs on **Cloud Run** rather than Cloud Functions — Cloud Run behaves like Render/any container host, just on Google's infrastructure. **Firebase Hosting** sits in front of it so you get a clean `https://your-project.web.app` URL and Firebase's CDN/caching for the static widget files, proxying everything else through to Cloud Run. The repo already includes a `Dockerfile` and `firebase.json` set up for this.
+
+### One-time setup
+
+1. Install the CLIs (if you don't have them):
+   ```bash
+   npm install -g firebase-tools
+   ```
+   You'll also need the [gcloud CLI](https://cloud.google.com/sdk/docs/install) — Firebase projects are Google Cloud projects under the hood, and `gcloud` is what deploys the container to Cloud Run.
+2. Create a project at https://console.firebase.google.com (or reuse an existing one), then log in locally:
+   ```bash
+   firebase login
+   gcloud auth login
+   gcloud config set project YOUR_PROJECT_ID
+   ```
+3. Put your project ID into `.firebaserc` (replace `your-firebase-project-id`), and into `firebase.json`'s `region` if you're not using `us-central1`.
+4. Enable the APIs Cloud Run needs (one-time per project):
+   ```bash
+   gcloud services enable run.googleapis.com cloudbuild.googleapis.com
+   ```
+
+### Deploy the server to Cloud Run
+
+```bash
+gcloud run deploy aichatagents \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars AI_PROVIDER=openai,OPENAI_API_KEY=sk-xxxxx,OPENAI_MODEL=gpt-4o-mini,BOT_NAME=Assistant,BOT_PERSONA="your persona text"
+```
+
+`--source .` tells Cloud Build to use the repo's `Dockerfile` automatically — no manual `docker build`/`push` needed. Re-run the same command any time you change code or env vars; `--service-name` stays `aichatagents` so it updates in place rather than creating a new service.
+
+For secrets you don't want in shell history/CI logs (API keys, app secrets), use [Secret Manager](https://cloud.google.com/run/docs/configuring/secrets) instead of `--set-env-vars`, or add them via the Cloud Run console under the service's **Edit & Deploy New Revision → Variables & Secrets**.
+
+### Put Firebase Hosting in front of it
+
+```bash
+firebase deploy --only hosting
+```
+
+This reads `firebase.json`'s rewrite rule and points `https://your-project.web.app` at the `aichatagents` Cloud Run service. That Hosting URL is your "server URL" everywhere in this README — Facebook/Instagram/WhatsApp webhook callback URLs, and `GMAIL_REDIRECT_URI` (update both the env var and the Google OAuth client's authorized redirect URIs to match, then visit `/gmail/auth` on that URL).
+
+You can also skip Hosting and use the Cloud Run service URL directly (`https://aichatagents-xxxxx-uc.a.run.app`, shown after `gcloud run deploy` finishes) — Hosting is just nicer to read and to hand to Meta's dashboard.
+
+### Gmail polling on Cloud Run
+
+Cloud Run scales services to zero when idle, so a long-running `npm run gmail:poll` loop won't reliably stay up. Instead, use the built-in `POST /gmail/poll` endpoint (protected by `GMAIL_CRON_SECRET`) with **Cloud Scheduler**:
+
+```bash
+gcloud scheduler jobs create http gmail-poll \
+  --schedule="*/5 * * * *" \
+  --uri="https://your-project.web.app/gmail/poll?secret=YOUR_GMAIL_CRON_SECRET" \
+  --http-method=POST \
+  --location=us-central1
+```
+
+Set `GMAIL_CRON_SECRET` in the Cloud Run service's env vars to the same value. This hits the endpoint every 5 minutes, waking the service if it scaled to zero, checking for unread mail, and replying.
+
+### Notes
+- Every `gcloud run deploy --source .` rebuilds and creates a new revision — there's no separate CI step needed, but it also means `gmail-token.json` written to the container's local disk disappears on the next deploy (Cloud Run containers are ephemeral/stateless). Re-run `/gmail/auth` after each deploy, or move the token into Firestore/Secret Manager if this becomes annoying — a good first task once you're building out persistent storage anyway.
+- Cloud Run's free tier is generous for low-traffic bots; you pay per request/compute time rather than a flat monthly fee like Render.
+
+## Deploying to Render (alternative)
 
 This repo includes a `render.yaml` blueprint, so Render can set most of it up automatically.
 
