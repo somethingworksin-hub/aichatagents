@@ -315,9 +315,12 @@ Set `GOOGLE_APPLICATION_CREDENTIALS_JSON` (or `GOOGLE_APPLICATION_CREDENTIALS` p
 
 ## What's next (not built yet)
 
-This is the Firestore-backed multi-tenant *foundation* — data model, tenant resolution, and an admin API. Deliberately not included yet:
-- A signup/login dashboard (tenants are currently managed via curl + `x-admin-key`)
-- Billing/usage metering per tenant
-- Per-tenant origin enforcement for the website widget (currently CORS is open; `siteKey` is the actual gate)
+Built so far: multi-tenant Firestore backend, all five channels, BYOK dashboard with email/password login + reset, Facebook/Instagram one-click connect, knowledge base (paste/URL/upload) with a retrieval preview tool. Not yet built:
 
-See the multi-tenant hour estimate discussed alongside this repo for scoping that follow-on work.
+- **Rate limiting on public endpoints** — `/api/chat/website` (and the channel webhooks) have no per-tenant request cap. Anyone who gets a `siteKey` could hammer it and run up a tenant's own AI bill. Worth doing before real traffic.
+- **Per-tenant origin enforcement for the website widget** — CORS is currently wide open; `siteKey` is the only real gate. `Tenant.website.allowedOrigins` exists in the data model but isn't checked yet.
+- **Billing/usage metering per tenant** — no message/token counts tracked anywhere, so there's no way to see or bill for a tenant's actual usage from the dashboard.
+- **Role-based dashboard access** — any Firebase Auth account gets full access to every tenant's BYOK keys; there's no per-user scoping yet.
+- **Conversation history viewer** — you can inspect Firestore directly, but there's no dashboard view of what a tenant's bot has actually said to real users.
+- **WhatsApp one-click connect** — Facebook/Instagram have it; WhatsApp is still manual paste-in (Meta's Embedded Signup flow is heavier to build).
+- **Human handoff marker** — the hook point exists in `chatbot.ts`'s docs but isn't wired to anything (e.g. no escalation email/notification when the bot can't help).
