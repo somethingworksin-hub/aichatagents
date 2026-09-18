@@ -50,6 +50,10 @@ app.use(express.static(path.join(__dirname, "..", "public")));
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
+// Clean URL alongside the static /dashboard.html (kept working too, since
+// it may already be linked/bookmarked).
+app.get("/dashboard", (_req, res) => res.sendFile(path.join(__dirname, "..", "public", "dashboard.html")));
+
 app.use(websiteRouter);
 app.use(facebookRouter);
 app.use(instagramRouter);
@@ -66,5 +70,5 @@ app.listen(config.port, () => {
   console.log(`  WhatsApp webhook:    http://localhost:${config.port}/webhook/whatsapp`);
   console.log(`  Gmail auth:          http://localhost:${config.port}/gmail/auth?tenantId=YOUR_TENANT_ID`);
   console.log(`  Admin API:           http://localhost:${config.port}/admin/tenants`);
-  console.log(`  Dashboard:           http://localhost:${config.port}/dashboard.html`);
+  console.log(`  Dashboard:           http://localhost:${config.port}/dashboard`);
 });

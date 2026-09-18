@@ -231,7 +231,8 @@
     </div>
     <div id="agent-list"></div>
     <div id="sidebar-footer">
-      <button onclick="logout()">Disconnect</button>
+      <div id="signed-in-as" class="sub" style="margin-bottom:8px;text-align:center;"></div>
+      <button onclick="logout()">Log out</button>
     </div>
   </div>
   <div id="main">
@@ -482,6 +483,9 @@ function showLogin() {
 async function boot() {
   document.getElementById("login").style.display = "none";
   document.getElementById("app").classList.add("active");
+  const signedInAs = document.getElementById("signed-in-as");
+  signedInAs.textContent =
+    authMode === "firebase" && firebaseAuth.currentUser ? firebaseAuth.currentUser.email : "";
   await refreshTenants();
 }
 
