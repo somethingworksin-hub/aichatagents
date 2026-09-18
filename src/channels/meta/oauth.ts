@@ -16,11 +16,11 @@ export const FACEBOOK_LOGIN_SCOPES = [
   "business_management",
 ].join(",");
 
-export function getFacebookLoginUrl(tenantId: string, redirectUri: string): string {
+export function getFacebookLoginUrl(state: string, redirectUri: string): string {
   const params = new URLSearchParams({
     client_id: config.meta.appId,
     redirect_uri: redirectUri,
-    state: tenantId,
+    state,
     scope: FACEBOOK_LOGIN_SCOPES,
     response_type: "code",
   });
