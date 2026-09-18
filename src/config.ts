@@ -28,6 +28,16 @@ export const config = {
     appId: required("META_APP_ID"),
   },
 
+  // "Instagram API with Instagram Login" — a separate product/credential
+  // pair from the Facebook Login app above, used only for the dashboard's
+  // native "Connect via Instagram" button (instagram.com login screen,
+  // rather than Facebook's). Optional: Instagram still works via the
+  // Facebook Login flow (Tenant.instagram / Tenant.facebook) without this.
+  instagramLogin: {
+    appId: required("INSTAGRAM_APP_ID"),
+    appSecret: required("INSTAGRAM_APP_SECRET"),
+  },
+
   whatsapp: {
     verifyToken: required("WHATSAPP_VERIFY_TOKEN"),
     graphApiVersion: required("WHATSAPP_GRAPH_API_VERSION", "v21.0"),

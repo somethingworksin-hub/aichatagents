@@ -3,14 +3,10 @@ import crypto from "crypto";
 import { config } from "../../config";
 
 const BASE = `https://graph.facebook.com/${config.meta.graphApiVersion}`;
+const INSTAGRAM_BASE = `https://graph.instagram.com/${config.meta.graphApiVersion}`;
 
-/**
- * Sends a text message via the Meta Send API. Works for both Facebook Messenger
- * and Instagram Direct — the payload shape is identical, only the recipient id
- * (PSID vs IGSID) and page access token differ per surface/tenant.
- */
-export async function sendMetaMessage(recipientId: string, text: string, pageAccessToken: string): Promise<void> {
-  const url = `${BASE}/me/messages?access_token=${encodeURIComponent(pageAccessToken)}`;
+async function sendViaSendApi(base: string, recipientId: string, text: string, accessToken: string): Promise<void> {
+  const url = `${base}/me/messages?access_token=${encodeURIComponent(accessToken)}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -25,6 +21,27 @@ export async function sendMetaMessage(recipientId: string, text: string, pageAcc
     const body = await res.text();
     console.error(`[meta] send failed: ${res.status} ${body}`);
   }
+}
+
+/**
+ * Sends a text message via the Meta Send API. Works for Facebook Messenger
+ * and Instagram Direct connected through Facebook Login — the payload shape
+ * is identical, only the recipient id (PSID vs IGSID) and page access token
+ * differ per surface/tenant. For Instagram accounts connected via the
+ * native Instagram Login flow instead, use sendInstagramMessage below (the
+ * access token is only valid against graph.instagram.com, not
+ * graph.facebook.com).
+ */
+export function sendMetaMessage(recipientId: string, text: string, pageAccessToken: string): Promise<void> {
+  return sendViaSendApi(BASE, recipientId, text, pageAccessToken);
+}
+
+/**
+ * Sends an Instagram DM using an Instagram user access token obtained via
+ * the native Instagram Login flow (Tenant.instagram.authMethod === "instagram").
+ */
+export function sendInstagramMessage(recipientId: string, text: string, instagramAccessToken: string): Promise<void> {
+  return sendViaSendApi(INSTAGRAM_BASE, recipientId, text, instagramAccessToken);
 }
 
 /**

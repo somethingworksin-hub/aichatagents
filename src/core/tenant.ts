@@ -34,6 +34,11 @@ export interface Tenant {
   instagram?: {
     instagramAccountId: string; // the id Meta's "instagram" webhook object reports in entry.id
     pageAccessToken: string;
+    // "facebook" (default/legacy, absent): connected via Facebook Login — this
+    // is a Page access token, sent through graph.facebook.com.
+    // "instagram": connected via the native Instagram Login flow — this is an
+    // Instagram user access token, sent through graph.instagram.com instead.
+    authMethod?: "facebook" | "instagram";
   };
 
   // One shared WhatsApp app (WHATSAPP_VERIFY_TOKEN in env); each tenant

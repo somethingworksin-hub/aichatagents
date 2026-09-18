@@ -777,22 +777,29 @@ function renderFacebookSection(tenant, origin) {
 
 function renderInstagramSection(tenant, origin) {
   const ig = tenant.instagram || {};
-  const connectUrl = origin + "/connect/facebook?tenantId=" + tenant.id + "&channel=instagram";
+  const nativeUrl = origin + "/connect/instagram?tenantId=" + tenant.id;
+  const viaFacebookUrl = origin + "/connect/facebook?tenantId=" + tenant.id + "&channel=instagram";
+  const connectedVia = ig.authMethod === "instagram" ? "Instagram" : "Facebook";
   return `<div class="channel-card">
     <div class="channel-card-head">
       <span class="channel-icon">📸</span>
       <h2>Instagram DMs</h2>
       ${tenant.instagram ? '<span class="badge on">Connected</span>' : '<span class="badge">Not connected</span>'}
     </div>
-    ${tenant.instagram ? `<div class="sub">Account ID: <code>${escapeHtml(ig.instagramAccountId)}</code></div>` : '<div class="sub">Requires an Instagram Professional/Business account linked to a Facebook Page (see README §6).</div>'}
-    <a href="${connectUrl}" target="_blank"><button class="primary" style="margin-top:10px;">${tenant.instagram ? "Reconnect via Facebook" : "Connect via Facebook"}</button></a>
+    ${tenant.instagram ? `<div class="sub">Account ID: <code>${escapeHtml(ig.instagramAccountId)}</code> · connected via ${connectedVia} login</div>` : '<div class="sub">Requires an Instagram Professional (Business or Creator) account.</div>'}
+    <a href="${nativeUrl}" target="_blank"><button class="primary" style="margin-top:10px;">${tenant.instagram ? "Reconnect via Instagram" : "Connect via Instagram"}</button></a>
     <details>
-      <summary>Connect manually instead (paste account ID/token)</summary>
+      <summary>Other ways to connect</summary>
       <div style="margin-top:10px;">
+        <div class="sub">Via Facebook Login instead (uses a linked Facebook Page):</div>
+        <a href="${viaFacebookUrl}" target="_blank"><button style="margin-top:6px;">Connect via Facebook</button></a>
+      </div>
+      <div style="margin-top:14px;">
+        <div class="sub">Or paste credentials manually:</div>
         <label>Instagram-scoped account ID</label>
         <input id="ig-accountid" value="${escapeAttr(ig.instagramAccountId || "")}" />
-        <label>Page access token</label>
-        <input id="ig-token" type="password" placeholder="${ig.pageAccessToken ? maskSecret(ig.pageAccessToken) : 'EAAxxxxx'}" />
+        <label>Access token</label>
+        <input id="ig-token" type="password" placeholder="${ig.pageAccessToken ? maskSecret(ig.pageAccessToken) : 'EAAxxxxx or IGAAxxxxx'}" />
         <div style="margin-top:10px;"><button class="primary" onclick="saveInstagram('${tenant.id}')">Save</button></div>
       </div>
     </details>

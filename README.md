@@ -151,9 +151,21 @@ One Meta app, and one login flow, covers both — the Meta app itself (`META_VER
 6. Under App Roles, add yourself and anyone else onboarding clients as **Admins/Developers/Testers** — this lets you use the connect flow immediately, on your own or your clients' Pages, without waiting on Meta's review.
 7. To use `pages_messaging`/`instagram_manage_messages` for people who *aren't* app admins/testers (i.e. real external clients), submit those permissions for **App Review** in Meta's dashboard. This is Meta's standard requirement for any app sending messages on behalf of a business — budget a few days to a couple of weeks depending on how quickly you can supply their required screencast/use-case docs. Testing works immediately either way.
 
-Per tenant, once the Meta app above exists — in the dashboard, open the agent → **Channels** tab. Facebook and Instagram each get their own **"Connect via Facebook"** button — both go through the same Meta login (Instagram Business messaging only exists via a linked Facebook Page, so there's no way around that), but each button only saves its own channel: clicking Instagram's button connects just the linked Instagram account without touching Facebook Messenger, and vice versa. If the account manages more than one Page (or more than one Page with a linked Instagram account, for the Instagram button), you'll be shown a picker. No manual copy-pasting of tokens needed either way.
+Per tenant, once the Meta app above exists — in the dashboard, open the agent → **Channels** tab. Facebook has its own **"Connect via Facebook"** button, saving only Facebook Messenger. If the account manages more than one Page, you'll be shown a picker.
 
-Prefer to wire it up by hand instead (or the app isn't approved for a given client yet)? Each section also has a "Connect manually instead" fallback — same fields as the admin API:
+### Instagram: native Instagram Login (recommended) vs. via Facebook
+
+Instagram's card defaults to **"Connect via Instagram"** — the real `instagram.com` login screen, via Meta's separate **"Instagram API with Instagram Login"** product. This needs its own credentials, distinct from the Facebook Login app above:
+
+1. In the same Meta App, go to the **Instagram** product → **API setup with Instagram Login**.
+2. Copy the **Instagram App ID** and **Instagram App Secret** shown there into `INSTAGRAM_APP_ID` / `INSTAGRAM_APP_SECRET` (these are *not* the same as `META_APP_ID`/`META_APP_SECRET`).
+3. Still on that screen, add `https://your-server.example.com/connect/instagram/callback` as a **Valid OAuth Redirect URI**.
+4. Under **Webhooks** on that same Instagram Login setup screen, subscribe to `messages` with Callback URL `https://your-server.example.com/webhook/instagram` and the same `META_VERIFY_TOKEN` — this is a separate webhook subscription from the Messenger one in step 4 above, specific to accounts connected via Instagram Login.
+5. The account logging in just needs to be an Instagram **Professional (Business or Creator) account** — no Facebook Page required. Like Facebook Login, messaging permissions need **App Review** before this works for anyone outside your app's admins/testers.
+
+Instagram's card also has a **"Connect via Facebook"** fallback under "Other ways to connect" (uses a linked Facebook Page, via the same flow as Messenger) — useful if you haven't set up Instagram Login yet, or the account only has a Page-linked Instagram setup. Both paths write to the same `Tenant.instagram` field; the dashboard shows which one a given agent used.
+
+Prefer to wire either one up by hand instead (or the app isn't approved for a given client yet)? Each section also has a "Connect manually instead" fallback — same fields as the admin API:
 ```bash
 curl -X PATCH http://localhost:3000/admin/tenants/TENANT_ID \
   -H "Content-Type: application/json" -H "x-admin-key: $ADMIN_API_KEY" \

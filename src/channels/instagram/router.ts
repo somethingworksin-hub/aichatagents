@@ -2,7 +2,7 @@ import { Router } from "express";
 import { config } from "../../config";
 import { generateReply } from "../../core/chatbot";
 import { findTenantByInstagramAccountId } from "../../core/tenant";
-import { sendMetaMessage, verifyMetaSignature } from "../meta/graphApi";
+import { sendMetaMessage, sendInstagramMessage, verifyMetaSignature } from "../meta/graphApi";
 
 export const instagramRouter = Router();
 
@@ -52,7 +52,11 @@ instagramRouter.post("/webhook/instagram", async (req, res) => {
         if (!senderId || !text || event.message?.is_echo) continue;
 
         const reply = await generateReply({ tenant, channel: "instagram", userId: senderId, message: text });
-        await sendMetaMessage(senderId, reply, tenant.instagram.pageAccessToken);
+        if (tenant.instagram.authMethod === "instagram") {
+          await sendInstagramMessage(senderId, reply, tenant.instagram.pageAccessToken);
+        } else {
+          await sendMetaMessage(senderId, reply, tenant.instagram.pageAccessToken);
+        }
       }
     }
   } catch (err) {

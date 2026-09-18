@@ -3,6 +3,7 @@ import { config } from "../../config";
 import { getTenant, updateTenant } from "../../core/tenant";
 import { FieldValue } from "../../firebaseAdmin";
 import { getFacebookLoginUrl, exchangeCodeForUserToken, exchangeForLongLivedToken, listManagedPages } from "./oauth";
+import { getInstagramLoginUrl, exchangeCodeForShortLivedToken, exchangeForLongLivedInstagramToken, getInstagramProfile } from "./instagramOauth";
 
 export const connectRouter = Router();
 
@@ -169,6 +170,70 @@ connectRouter.get("/connect/facebook/select", async (req, res) => {
   } catch (err) {
     console.error("[connect/facebook/select] failed", err);
     res.status(500).send(page("Something went wrong", "<h1>Something went wrong</h1><p>Check server logs.</p>"));
+  }
+});
+
+function instagramRedirectUriFor(req: any): string {
+  return `${req.protocol}://${req.get("host")}/connect/instagram/callback`;
+}
+
+/**
+ * Native Instagram Login — instagram.com's own login screen, rather than
+ * Facebook's (see /connect/facebook?channel=instagram for that route).
+ * Requires INSTAGRAM_APP_ID/INSTAGRAM_APP_SECRET, from the Meta App's
+ * "Instagram API setup with Instagram Login" screen (separate from the
+ * Facebook Login App ID/Secret), and this server's
+ * /connect/instagram/callback registered as a Valid OAuth Redirect URI
+ * there (see README).
+ */
+connectRouter.get("/connect/instagram", async (req, res) => {
+  const tenantId = req.query.tenantId as string | undefined;
+  if (!tenantId) return res.status(400).send("Missing ?tenantId=");
+  if (!config.instagramLogin.appId) {
+    return res.status(503).send(page("Not configured", "<h1>Not configured</h1><p>INSTAGRAM_APP_ID isn't set on this server.</p>"));
+  }
+  try {
+    const tenant = await getTenant(tenantId);
+    if (!tenant) return res.status(404).send("No tenant found with that id.");
+
+    res.redirect(getInstagramLoginUrl(tenantId, instagramRedirectUriFor(req)));
+  } catch (err) {
+    console.error("[connect/instagram] failed", err);
+    res.status(500).send(page("Something went wrong", "<h1>Something went wrong</h1><p>Check server logs.</p>"));
+  }
+});
+
+connectRouter.get("/connect/instagram/callback", async (req, res) => {
+  const tenantId = req.query.state as string | undefined;
+  const code = req.query.code as string | undefined;
+
+  if (req.query.error) {
+    return res.send(
+      page("Cancelled", `<h1>Connection cancelled</h1><p>${escapeHtml((req.query.error_description as string) || "You cancelled the request.")}</p>`)
+    );
+  }
+  if (!tenantId || !code) {
+    return res.status(400).send("Missing code or state from Instagram's redirect.");
+  }
+
+  try {
+    const shortLived = await exchangeCodeForShortLivedToken(code, instagramRedirectUriFor(req));
+    const longLivedToken = await exchangeForLongLivedInstagramToken(shortLived.access_token);
+    const profile = await getInstagramProfile(longLivedToken);
+
+    await updateTenant(tenantId, {
+      instagram: { instagramAccountId: profile.userId, pageAccessToken: longLivedToken, authMethod: "instagram" },
+    });
+
+    res.send(
+      page(
+        "Connected",
+        `<h1>Connected to @${escapeHtml(profile.username)}</h1><p>Instagram DMs are now connected for this agent. You can close this tab.</p>`
+      )
+    );
+  } catch (err: any) {
+    console.error("[connect/instagram] callback failed", err);
+    res.status(500).send(page("Something went wrong", `<h1>Connection failed</h1><p>${escapeHtml(err?.message || "Unknown error")}</p>`));
   }
 });
 
