@@ -176,14 +176,50 @@
 
 <div id="login">
   <h1>AI Chat Agents</h1>
-  <p>Enter your admin key to manage agents. This talks directly to <code>/admin/*</code> on this same server.</p>
+  <p>Sign in to manage agents. This talks directly to <code>/admin/*</code> on this same server.</p>
   <label>API base (leave blank to use this page's origin)</label>
   <input id="login-api-base" placeholder="https://your-server.example.com" />
-  <label>Admin API key</label>
-  <input id="login-key" type="password" placeholder="sk-admin-..." />
-  <div style="margin-top:16px;">
-    <button class="primary" style="width:100%" onclick="doLogin()">Connect</button>
+
+  <div class="tabs" id="login-tabs" style="margin-top:10px;">
+    <button class="tab-btn active" data-logintab="password" onclick="switchLoginTab(this,'password')">Email &amp; password</button>
+    <button class="tab-btn" data-logintab="adminkey" onclick="switchLoginTab(this,'adminkey')">Admin key</button>
   </div>
+
+  <div class="tab-panel active" data-loginpanel="password">
+    <div id="login-form">
+      <label>Email</label>
+      <input id="login-email" type="email" autocomplete="username" placeholder="you@company.com" />
+      <label>Password</label>
+      <input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••" onkeydown="if(event.key==='Enter') doEmailLogin()" />
+      <div style="margin-top:16px;">
+        <button class="primary" style="width:100%" onclick="doEmailLogin()">Log in</button>
+      </div>
+      <div style="text-align:center;margin-top:10px;">
+        <a href="#" style="font-size:12px;color:var(--text-dim);" onclick="showResetForm();return false;">Forgot password?</a>
+      </div>
+    </div>
+    <div id="reset-form" style="display:none;">
+      <label>Email</label>
+      <input id="reset-email" type="email" placeholder="you@company.com" />
+      <div style="margin-top:16px;">
+        <button class="primary" style="width:100%" onclick="doPasswordReset()">Send reset email</button>
+      </div>
+      <div style="text-align:center;margin-top:10px;">
+        <a href="#" style="font-size:12px;color:var(--text-dim);" onclick="showLoginForm();return false;">Back to login</a>
+      </div>
+    </div>
+    <div class="sub" style="margin-top:14px;">No account yet? Accounts are created by whoever runs this server (Firebase Console → Authentication → Users) — there's no public sign-up, since any account here can see every agent's API keys.</div>
+  </div>
+
+  <div class="tab-panel" data-loginpanel="adminkey">
+    <label>Admin API key</label>
+    <input id="login-key" type="password" placeholder="sk-admin-..." onkeydown="if(event.key==='Enter') doAdminKeyLogin()" />
+    <div style="margin-top:16px;">
+      <button class="primary" style="width:100%" onclick="doAdminKeyLogin()">Connect</button>
+    </div>
+    <div class="sub" style="margin-top:10px;">Falls back to the shared <code>ADMIN_API_KEY</code> server secret instead of a personal login — mainly for scripting/curl parity, or before you've created your first user account.</div>
+  </div>
+
   <div id="login-error"></div>
 </div>
 
@@ -282,39 +318,75 @@
 
 <div class="toast" id="toast"></div>
 
+<!--
+  Firebase config is not secret (it's a client-side identifier, protected by
+  Firebase Auth/Security Rules — not by being hidden), so it's fine to embed
+  here. Get yours from Firebase Console → Project Settings → General →
+  Your apps → Web app (create one if you don't have one), or run
+  `firebase apps:sdkconfig web` from the CLI.
+-->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "YOUR_FIREBASE_WEB_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+};
+firebase.initializeApp(firebaseConfig);
+const firebaseAuth = firebase.auth();
+</script>
+
 <script>
 let apiBase = "";
 let adminKey = "";
+let authMode = null; // "firebase" | "adminkey"
 let tenants = [];
 let selectedId = null;
 
 // --- persistence ---
 function loadSession() {
   apiBase = localStorage.getItem("aca_api_base") || "";
+  authMode = localStorage.getItem("aca_auth_mode") || null;
   adminKey = localStorage.getItem("aca_admin_key") || "";
-  return !!adminKey;
-}
-function saveSession() {
-  localStorage.setItem("aca_api_base", apiBase);
-  localStorage.setItem("aca_admin_key", adminKey);
 }
 function logout() {
-  localStorage.removeItem("aca_api_base");
+  if (authMode === "firebase") firebaseAuth.signOut().catch(() => {});
+  localStorage.removeItem("aca_auth_mode");
   localStorage.removeItem("aca_admin_key");
   location.reload();
 }
 
 // --- api helper ---
+async function authHeaders() {
+  if (authMode === "firebase" && firebaseAuth.currentUser) {
+    const token = await firebaseAuth.currentUser.getIdToken();
+    return { "Authorization": "Bearer " + token };
+  }
+  return { "x-admin-key": adminKey };
+}
+
 async function api(path, opts) {
   opts = opts || {};
-  const headers = Object.assign({ "Content-Type": "application/json", "x-admin-key": adminKey }, opts.headers || {});
+  const headers = Object.assign({ "Content-Type": "application/json" }, await authHeaders(), opts.headers || {});
   const res = await fetch(apiBase + path, Object.assign({}, opts, { headers }));
-  if (res.status === 403) throw new Error("Admin key rejected (403). Check your key and try again.");
-  if (res.status === 503) throw new Error("Server has no ADMIN_API_KEY configured.");
+  if (res.status === 403) throw new Error("Not authorized (403). Check your login and try again.");
   let data = null;
   try { data = await res.json(); } catch (e) {}
   if (!res.ok) throw new Error((data && data.error) || ("Request failed (" + res.status + ")"));
   return data;
+}
+
+function firebaseErrorMessage(e) {
+  const map = {
+    "auth/invalid-credential": "Incorrect email or password.",
+    "auth/wrong-password": "Incorrect email or password.",
+    "auth/user-not-found": "No account with that email.",
+    "auth/invalid-email": "That doesn't look like a valid email address.",
+    "auth/too-many-requests": "Too many attempts — wait a bit and try again.",
+    "auth/network-request-failed": "Network error — check your connection and try again.",
+  };
+  return (e && map[e.code]) || (e && e.message) || "Something went wrong.";
 }
 
 function toast(msg, isError) {
@@ -326,19 +398,79 @@ function toast(msg, isError) {
 }
 
 // --- login ---
-async function doLogin() {
+function readApiBase() {
   apiBase = document.getElementById("login-api-base").value.trim().replace(/\/$/, "");
+  localStorage.setItem("aca_api_base", apiBase);
+}
+
+function loginError(msg) {
+  const el = document.getElementById("login-error");
+  el.textContent = msg;
+  el.style.display = msg ? "block" : "none";
+}
+
+function switchLoginTab(btn, name) {
+  const root = document.getElementById("login");
+  root.querySelectorAll("#login-tabs .tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  root.querySelectorAll("[data-loginpanel]").forEach(p => p.classList.remove("active"));
+  root.querySelector('[data-loginpanel="' + name + '"]').classList.add("active");
+  loginError("");
+}
+
+function showResetForm() {
+  document.getElementById("login-form").style.display = "none";
+  document.getElementById("reset-form").style.display = "block";
+  document.getElementById("reset-email").value = document.getElementById("login-email").value;
+  loginError("");
+}
+function showLoginForm() {
+  document.getElementById("login-form").style.display = "block";
+  document.getElementById("reset-form").style.display = "none";
+  loginError("");
+}
+
+async function doEmailLogin() {
+  readApiBase();
+  const email = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value;
+  loginError("");
+  if (!email || !password) return loginError("Enter your email and password.");
+  try {
+    await firebaseAuth.signInWithEmailAndPassword(email, password);
+    localStorage.setItem("aca_auth_mode", "firebase");
+    // onAuthStateChanged (see init, below) picks this up and calls boot().
+  } catch (e) {
+    loginError(firebaseErrorMessage(e));
+  }
+}
+
+async function doPasswordReset() {
+  const email = document.getElementById("reset-email").value.trim();
+  loginError("");
+  if (!email) return loginError("Enter your email.");
+  try {
+    await firebaseAuth.sendPasswordResetEmail(email);
+    toast("Password reset email sent — check your inbox.");
+    showLoginForm();
+  } catch (e) {
+    loginError(firebaseErrorMessage(e));
+  }
+}
+
+async function doAdminKeyLogin() {
+  readApiBase();
   adminKey = document.getElementById("login-key").value.trim();
-  const errEl = document.getElementById("login-error");
-  errEl.style.display = "none";
-  if (!adminKey) { errEl.textContent = "Enter your admin key."; errEl.style.display = "block"; return; }
+  authMode = "adminkey";
+  loginError("");
+  if (!adminKey) return loginError("Enter your admin key.");
   try {
     await api("/admin/tenants");
-    saveSession();
+    localStorage.setItem("aca_auth_mode", "adminkey");
+    localStorage.setItem("aca_admin_key", adminKey);
     boot();
   } catch (e) {
-    errEl.textContent = e.message;
-    errEl.style.display = "block";
+    loginError(e.message);
   }
 }
 
@@ -762,7 +894,7 @@ async function submitKnowledgeFile(btn) {
       formData.append("file", file);
       const res = await fetch(apiBase + "/admin/tenants/" + knowledgeTenantId + "/knowledge/upload", {
         method: "POST",
-        headers: { "x-admin-key": adminKey }, // no Content-Type — browser sets the multipart boundary itself
+        headers: await authHeaders(), // no Content-Type — browser sets the multipart boundary itself
         body: formData,
       });
       const data = await res.json().catch(() => ({}));
@@ -845,13 +977,25 @@ function copyText(elId) {
 
 // --- init ---
 (function init() {
-  if (loadSession()) {
-    document.getElementById("login-api-base").value = apiBase;
-    document.getElementById("login-key").value = adminKey;
+  loadSession();
+  document.getElementById("login-api-base").value = apiBase;
+  document.getElementById("login-key").value = adminKey;
+
+  if (authMode === "adminkey" && adminKey) {
     api("/admin/tenants").then(() => boot()).catch(() => showLogin());
-  } else {
-    showLogin();
+    return;
   }
+
+  // Default path: wait for Firebase to report whether a session is already
+  // persisted (it keeps you logged in across reloads on its own).
+  firebaseAuth.onAuthStateChanged((user) => {
+    if (user) {
+      authMode = "firebase";
+      boot();
+    } else if (authMode !== "adminkey") {
+      showLogin();
+    }
+  });
 })();
 </script>
 </body>

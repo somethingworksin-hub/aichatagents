@@ -2,6 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import crypto from "crypto";
 import { config } from "../../config";
+import { auth } from "../../firebaseAdmin";
 import { createTenant, updateTenant, listTenants, getTenant, deleteTenant, Tenant } from "../../core/tenant";
 import {
   addKnowledgeText,
@@ -17,18 +18,32 @@ export const adminRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
 /**
- * Minimal secret-protected REST API for managing tenants until a real
- * dashboard/auth UI exists (see CLIENT_ONBOARDING.md / README for the
- * curl-based workflow this is meant to support).
+ * REST API for managing tenants, reachable two ways:
+ *  - a signed-in dashboard user (Firebase Auth email/password login) — the
+ *    dashboard sends `Authorization: Bearer <Firebase ID token>`, verified
+ *    below. Any account that exists in Firebase Auth gets full access —
+ *    there's no per-user role system, so only create accounts (via Firebase
+ *    Console → Authentication → Users, there's no public self-signup) for
+ *    people you trust with every tenant's BYOK API keys.
+ *  - the shared `x-admin-key: <ADMIN_API_KEY>` header, for curl/scripting
+ *    (see CLIENT_ONBOARDING.md / README).
  */
-adminRouter.use("/admin", (req, res, next) => {
-  if (!config.adminApiKey) {
-    return res.status(503).json({ error: "ADMIN_API_KEY is not configured on this server." });
+adminRouter.use("/admin", async (req, res, next) => {
+  if (config.adminApiKey && req.header("x-admin-key") === config.adminApiKey) {
+    return next();
   }
-  if (req.header("x-admin-key") !== config.adminApiKey) {
-    return res.sendStatus(403);
+
+  const authHeader = req.header("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      await auth.verifyIdToken(authHeader.slice("Bearer ".length));
+      return next();
+    } catch (err) {
+      return res.sendStatus(403);
+    }
   }
-  next();
+
+  res.sendStatus(403);
 });
 
 adminRouter.post("/admin/tenants", async (req, res) => {

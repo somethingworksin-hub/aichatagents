@@ -27,3 +27,4 @@ export const db = admin.firestore();
 // caller to strip undefined keys themselves.
 db.settings({ ignoreUndefinedProperties: true });
 export const FieldValue = admin.firestore.FieldValue;
+export const auth = admin.auth();

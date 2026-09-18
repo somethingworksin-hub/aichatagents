@@ -61,9 +61,29 @@ The server starts on `http://localhost:3000`. For webhooks (Facebook/Instagram/W
 
 ## 3. Dashboard
 
-Visit `https://your-server.example.com/dashboard.html` — a self-contained admin UI (no build step, no login system of its own) for everything below: create agents (tenants), manage their persona/AI provider/key (BYOK), connect channels, and manage each agent's knowledge base. It authenticates by asking for your `ADMIN_API_KEY` once and storing it in the browser's `localStorage`, then talks directly to the `/admin/*` API described in this README — it's a UI over that API, not a separate system. Since it's just a static file, it works against any deployment (point "API base" at a different server if you're managing a deploy you're not currently browsing).
+Visit `https://your-server.example.com/dashboard.html` — a self-contained admin UI (no build step) for everything below: create agents (tenants), manage their persona/AI provider/key (BYOK), connect channels, and manage each agent's knowledge base. It's a UI over the `/admin/*` API described in this README, not a separate system — since it's just a static file, it works against any deployment (point "API base" at a different server if you're managing a deploy you're not currently browsing).
 
 Everything the dashboard does can also be done via curl against the admin API directly (handy for scripting bulk onboarding) — that's documented below.
+
+### Setting up login (Firebase Authentication)
+
+The dashboard's primary login is real email/password accounts via Firebase Auth, with a password-reset flow. There's **no public sign-up** — anyone with an account gets full access to every tenant's BYOK API keys, so accounts are created by you, not self-served. One-time setup:
+
+1. In the [Firebase Console](https://console.firebase.google.com) → your project → **Build → Authentication → Get started**, enable the **Email/Password** sign-in provider.
+2. Still in Authentication, go to the **Users** tab → **Add user** → enter an email and a temporary password for yourself (and anyone else who should manage tenants). They can change it later via "Forgot password?" on the login screen.
+3. Get your web app config: **Project Settings** (gear icon) → **General** → under "Your apps", add a **Web app** if you don't have one (any nickname, Firebase Hosting setup not required), then copy the `firebaseConfig` object it shows you.
+4. Open `public/dashboard.html`, find the `firebaseConfig` placeholder near the top of the script section, and replace it with your real values:
+   ```js
+   const firebaseConfig = {
+     apiKey: "AIza...",
+     authDomain: "your-project-id.firebaseapp.com",
+     projectId: "your-project-id",
+   };
+   ```
+   This config isn't secret — it's a client-side identifier, not a credential (real access control happens via Firebase Auth + the server verifying ID tokens), so it's fine to commit.
+5. Redeploy. Open the dashboard, use the **"Email & password"** tab to log in with the account from step 2.
+
+The dashboard's **"Admin key"** tab is a fallback to the shared `ADMIN_API_KEY` secret (same one curl/scripting uses) — handy before you've set up step 1-4, or if you'd rather not create individual accounts yet. Both auth methods work simultaneously; the admin API accepts either a valid Firebase ID token or the `ADMIN_API_KEY` header.
 
 ## 4. Creating a tenant via the admin API
 
