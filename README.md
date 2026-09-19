@@ -284,6 +284,17 @@ firebase deploy --only hosting
 
 That Hosting URL is your "server URL" everywhere in this README — webhook callback URLs, `GMAIL_REDIRECT_URI`, the widget's `data-api-base`. You can also skip Hosting and use the Cloud Run service URL directly.
 
+### Custom domain (e.g. inaiagents.somethingworksin.com)
+
+The marketing site at `public/index.html` ("IN AI Agents") is meant to be served from this domain.
+
+1. Firebase Console → your project → **Hosting** → **Add custom domain** → enter `inaiagents.somethingworksin.com`.
+2. Firebase shows a TXT record (ownership verification) and then an A/AAAA (or CNAME, for a subdomain) record — add both at your DNS provider (wherever `somethingworksin.com`'s DNS is managed).
+3. Wait for DNS to propagate and Firebase to auto-provision the SSL certificate (can take up to ~24h, usually much faster). The Hosting page shows a status per step.
+4. Once it's live, update every "server URL" reference above (webhook callback URLs in the Meta App / Google Cloud OAuth client, `GMAIL_REDIRECT_URI`, the website widget's `data-api-base`) to use `https://inaiagents.somethingworksin.com` instead of the `*.web.app` URL, and redeploy (`gcloud run deploy ...` with the updated `GMAIL_REDIRECT_URI`, then `firebase deploy --only hosting`).
+
+This is the same process you used for `aiagents.somethingworksin.com` — Firebase Hosting supports multiple custom domains pointing at the same site, so both can stay live if needed.
+
 ### Gmail polling on Cloud Run
 
 Cloud Run scales to zero when idle, so a long-running `npm run gmail:poll` loop won't reliably stay up. Use `POST /gmail/poll` (protected by `GMAIL_CRON_SECRET`) with **Cloud Scheduler** instead, polling every connected tenant:
